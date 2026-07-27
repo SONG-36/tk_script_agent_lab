@@ -1,4 +1,6 @@
 .env.example
+.gitignore
+.python-version
 AGENTS.md
 ARCHITECTURE.md
 COST_AND_SAFETY_LIMITS.md
@@ -31,5 +33,7 @@ prompts/.gitkeep
 pyproject.toml
 run_traces/.gitkeep
 src/.gitkeep
+src/tk_script_agent_lab/__init__.py
 task_contracts/TEMPLATE.md
 tests/.gitkeep
+tests/test_baseline.py
