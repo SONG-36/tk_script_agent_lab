@@ -33,7 +33,7 @@ def test_phase0_dependency_boundary():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert pyproject["project"]["requires-python"] == ">=3.12"
-    assert pyproject["project"]["dependencies"] == []
+    assert pyproject["project"]["dependencies"] == ["pydantic>=2,<3"]
     assert pyproject["project"]["optional-dependencies"] == {
         "dev": ["pytest>=8.0"],
     }

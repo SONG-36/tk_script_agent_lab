@@ -34,6 +34,12 @@ pyproject.toml
 run_traces/.gitkeep
 src/.gitkeep
 src/tk_script_agent_lab/__init__.py
+src/tk_script_agent_lab/domain/__init__.py
+src/tk_script_agent_lab/domain/errors.py
+src/tk_script_agent_lab/domain/models.py
+src/tk_script_agent_lab/golden_case/__init__.py
+src/tk_script_agent_lab/golden_case/loader.py
 task_contracts/TEMPLATE.md
 tests/.gitkeep
 tests/test_baseline.py
+tests/test_golden_case_loader.py
