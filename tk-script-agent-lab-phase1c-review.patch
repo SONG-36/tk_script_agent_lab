@@ -1,0 +1,1343 @@
+diff --git a/FILE_MANIFEST.txt b/FILE_MANIFEST.txt
+index 377abef..b46917e 100644
+--- a/FILE_MANIFEST.txt
++++ b/FILE_MANIFEST.txt
+@@ -41,13 +41,22 @@ src/tk_script_agent_lab/__init__.py
+ src/tk_script_agent_lab/domain/__init__.py
+ src/tk_script_agent_lab/domain/errors.py
+ src/tk_script_agent_lab/domain/models.py
++src/tk_script_agent_lab/domain/validators.py
+ src/tk_script_agent_lab/fixtures/__init__.py
+ src/tk_script_agent_lab/fixtures/loader.py
+ src/tk_script_agent_lab/golden_case/__init__.py
+ src/tk_script_agent_lab/golden_case/loader.py
++src/tk_script_agent_lab/pipeline/__init__.py
++src/tk_script_agent_lab/pipeline/deterministic.py
++src/tk_script_agent_lab/providers/__init__.py
++src/tk_script_agent_lab/providers/fake.py
++src/tk_script_agent_lab/providers/protocols.py
+ task_contracts/TEMPLATE.md
+ tests/.gitkeep
+ tests/test_baseline.py
+ tests/test_golden_case_loader.py
++tests/test_deterministic_pipeline.py
++tests/test_fake_providers.py
+ tests/test_output_fixtures.py
+ tests/test_output_models.py
++tests/test_provider_protocols.py
+diff --git a/src/tk_script_agent_lab/domain/__init__.py b/src/tk_script_agent_lab/domain/__init__.py
+index 87a2f33..89284ae 100644
+--- a/src/tk_script_agent_lab/domain/__init__.py
++++ b/src/tk_script_agent_lab/domain/__init__.py
+@@ -11,6 +11,10 @@ from tk_script_agent_lab.domain.errors import (
+     OutputReferenceError,
+     OutputSchemaError,
+     OutputValidationError,
++    PipelineValidationError,
++    ProviderError,
++    ProviderOutputError,
++    CreativeSelectionError,
+ )
+ from tk_script_agent_lab.domain.models import (
+     CreativeIdea,
+@@ -34,6 +38,7 @@ __all__ = [
+     "GoldenCaseJsonError",
+     "GoldenCasePathError",
+     "GoldenCaseValidationError",
++    "CreativeSelectionError",
+     "OutputFixtureError",
+     "OutputFixtureFileError",
+     "OutputFixtureJsonError",
+@@ -42,8 +47,11 @@ __all__ = [
+     "OutputReferenceError",
+     "OutputSchemaError",
+     "OutputValidationError",
++    "PipelineValidationError",
+     "ProductFact",
+     "ProductProfile",
++    "ProviderError",
++    "ProviderOutputError",
+     "ReferenceInsight",
+     "ReferenceVideo",
+     "ScriptDraft",
+diff --git a/src/tk_script_agent_lab/domain/errors.py b/src/tk_script_agent_lab/domain/errors.py
+index 99876f0..58b60df 100644
+--- a/src/tk_script_agent_lab/domain/errors.py
++++ b/src/tk_script_agent_lab/domain/errors.py
+@@ -44,3 +44,19 @@ class OutputSchemaError(OutputValidationError):
+ 
+ class OutputReferenceError(OutputValidationError):
+     """Raised when output fixture data references missing or mismatched IDs."""
++
++
++class ProviderError(Exception):
++    """Base error for provider contract and execution failures."""
++
++
++class ProviderOutputError(ProviderError):
++    """Raised when a provider returns data that fails deterministic validation."""
++
++
++class CreativeSelectionError(Exception):
++    """Raised when a human-provided creative idea selection is invalid."""
++
++
++class PipelineValidationError(Exception):
++    """Raised when deterministic pipeline validation fails."""
+diff --git a/src/tk_script_agent_lab/fixtures/loader.py b/src/tk_script_agent_lab/fixtures/loader.py
+index b2e20d7..1576a9d 100644
+--- a/src/tk_script_agent_lab/fixtures/loader.py
++++ b/src/tk_script_agent_lab/fixtures/loader.py
+@@ -8,7 +8,6 @@ from tk_script_agent_lab.domain.errors import (
+     OutputFixtureFileError,
+     OutputFixtureJsonError,
+     OutputFixturePathError,
+-    OutputReferenceError,
+     OutputSchemaError,
+     OutputValidationError,
+ )
+@@ -18,8 +17,8 @@ from tk_script_agent_lab.domain.models import (
+     OutputFixtureSet,
+     ReferenceInsight,
+     ScriptDraft,
+-    SourceUsage,
+ )
++from tk_script_agent_lab.domain.validators import validate_output_fixture_set
+ 
+ 
+ REQUIRED_OUTPUT_FIXTURE_FILES = {
+@@ -62,7 +61,7 @@ def load_output_fixtures(
+     except OutputValidationError:
+         raise
+ 
+-    _validate_against_golden_case(output, golden_case)
++    validate_output_fixture_set(output, golden_case)
+     return output
+ 
+ 
+@@ -96,118 +95,3 @@ def _require_array(file_name: str, value: Any) -> None:
+         raise OutputSchemaError(
+             f"{file_name} root must be a JSON array, got {type(value).__name__}"
+         )
+-
+-
+-def _validate_against_golden_case(
+-    output: OutputFixtureSet,
+-    golden_case: GoldenCase,
+-) -> None:
+-    reference_ids = {video.reference_id for video in golden_case.reference_videos}
+-    fact_ids = {fact.fact_id for fact in golden_case.product_facts}
+-    selling_point_ids = {point.selling_point_id for point in golden_case.selling_points}
+-    selling_points_by_id = {
+-        point.selling_point_id: point for point in golden_case.selling_points
+-    }
+-    insight_ids = {insight.insight_id for insight in output.reference_insights}
+-    ideas_by_id = {idea.idea_id: idea for idea in output.creative_ideas}
+-    idea_ids = set(ideas_by_id)
+-
+-    for insight in output.reference_insights:
+-        _require_existing_id(
+-            "ReferenceInsight.reference_id",
+-            insight.reference_id,
+-            reference_ids,
+-        )
+-
+-    for idea in output.creative_ideas:
+-        for selling_point_id in idea.selected_selling_point_ids:
+-            _require_existing_id(
+-                f"CreativeIdea({idea.idea_id}).selected_selling_point_ids",
+-                selling_point_id,
+-                selling_point_ids,
+-            )
+-        for insight_id in idea.source_insight_ids:
+-            _require_existing_id(
+-                f"CreativeIdea({idea.idea_id}).source_insight_ids",
+-                insight_id,
+-                insight_ids,
+-            )
+-
+-    script = output.script_draft
+-    if script.product_version_id != golden_case.product_profile.product_version_id:
+-        raise OutputReferenceError(
+-            "ScriptDraft product_version_id must match Golden Case "
+-            f"product_version_id={golden_case.product_profile.product_version_id}; "
+-            f"got {script.product_version_id}"
+-        )
+-    _require_existing_id("ScriptDraft.creative_idea_id", script.creative_idea_id, idea_ids)
+-    selected_idea = ideas_by_id[script.creative_idea_id]
+-    selected_selling_point_ids = set(selected_idea.selected_selling_point_ids)
+-    selected_insight_ids = set(selected_idea.source_insight_ids)
+-
+-    for usage in script.source_usages:
+-        _validate_source_usage(usage, fact_ids, selling_point_ids, insight_ids)
+-        if (
+-            usage.source_type == "reference_insight"
+-            and usage.source_id not in selected_insight_ids
+-        ):
+-            raise OutputReferenceError(
+-                "ScriptDraft.source_usages reference_insight must belong to selected "
+-                f"CreativeIdea({selected_idea.idea_id}); source_id={usage.source_id}"
+-            )
+-
+-    for scene in script.scenes:
+-        for selling_point_id in scene.selling_point_ids:
+-            _require_existing_id(
+-                f"ScriptScene({scene.scene_id}).selling_point_ids",
+-                selling_point_id,
+-                selling_point_ids,
+-            )
+-            if selling_point_id not in selected_selling_point_ids:
+-                raise OutputReferenceError(
+-                    "ScriptScene selling_point_ids must belong to selected "
+-                    f"CreativeIdea({selected_idea.idea_id}); scene_id={scene.scene_id}; "
+-                    f"selling_point_id={selling_point_id}"
+-                )
+-
+-        supported_fact_ids = {
+-            fact_id
+-            for selling_point_id in scene.selling_point_ids
+-            for fact_id in selling_points_by_id[selling_point_id].fact_ids
+-        }
+-        for fact_id in scene.fact_ids:
+-            _require_existing_id(
+-                f"ScriptScene({scene.scene_id}).fact_ids",
+-                fact_id,
+-                fact_ids,
+-            )
+-            if fact_id not in supported_fact_ids:
+-                raise OutputReferenceError(
+-                    "ScriptScene fact_ids must be supported by its selling_point_ids; "
+-                    f"scene_id={scene.scene_id}; fact_id={fact_id}; "
+-                    f"selling_point_ids={scene.selling_point_ids}"
+-                )
+-
+-
+-def _validate_source_usage(
+-    usage: SourceUsage,
+-    fact_ids: set[str],
+-    selling_point_ids: set[str],
+-    insight_ids: set[str],
+-) -> None:
+-    source_ids_by_type = {
+-        "product_fact": fact_ids,
+-        "selling_point": selling_point_ids,
+-        "reference_insight": insight_ids,
+-    }
+-    valid_source_ids = source_ids_by_type[usage.source_type]
+-    if usage.source_id not in valid_source_ids:
+-        raise OutputReferenceError(
+-            f"SourceUsage({usage.usage_id}) source_type={usage.source_type} "
+-            f"does not match an existing source_id={usage.source_id}"
+-        )
+-
+-
+-def _require_existing_id(label: str, value: str, allowed_values: set[str]) -> None:
+-    if value not in allowed_values:
+-        raise OutputReferenceError(f"{label} references missing id={value}")
+diff --git a/src/tk_script_agent_lab/domain/validators.py b/src/tk_script_agent_lab/domain/validators.py
+new file mode 100644
+index 0000000..c50ca8b
+--- /dev/null
++++ b/src/tk_script_agent_lab/domain/validators.py
+@@ -0,0 +1,257 @@
++from collections import Counter
++
++from tk_script_agent_lab.domain.errors import (
++    OutputReferenceError,
++    OutputSchemaError,
++    OutputValidationError,
++)
++from tk_script_agent_lab.domain.models import (
++    CreativeIdea,
++    GoldenCase,
++    OutputFixtureSet,
++    ReferenceInsight,
++    ScriptDraft,
++)
++
++
++def validate_reference_insights(
++    golden_case: GoldenCase,
++    insights: list[ReferenceInsight],
++) -> None:
++    _require_non_empty("ReferenceInsight output", insights)
++    _require_instances("ReferenceInsight output", insights, ReferenceInsight)
++    _require_unique_values(
++        "ReferenceInsight.insight_id",
++        [insight.insight_id for insight in insights],
++    )
++
++    reference_ids = {video.reference_id for video in golden_case.reference_videos}
++    for insight in insights:
++        _require_existing_id(
++            "ReferenceInsight.reference_id",
++            insight.reference_id,
++            reference_ids,
++        )
++
++
++def validate_creative_ideas(
++    golden_case: GoldenCase,
++    insights: list[ReferenceInsight],
++    ideas: list[CreativeIdea],
++) -> None:
++    _require_non_empty("CreativeIdea output", ideas)
++    _require_instances("CreativeIdea output", ideas, CreativeIdea)
++    _require_unique_values(
++        "CreativeIdea.idea_id",
++        [idea.idea_id for idea in ideas],
++    )
++
++    selling_point_ids = {point.selling_point_id for point in golden_case.selling_points}
++    insight_ids = {insight.insight_id for insight in insights}
++    for idea in ideas:
++        for selling_point_id in idea.selected_selling_point_ids:
++            _require_existing_id(
++                f"CreativeIdea({idea.idea_id}).selected_selling_point_ids",
++                selling_point_id,
++                selling_point_ids,
++            )
++        for insight_id in idea.source_insight_ids:
++            _require_existing_id(
++                f"CreativeIdea({idea.idea_id}).source_insight_ids",
++                insight_id,
++                insight_ids,
++            )
++
++
++def validate_script_draft(
++    golden_case: GoldenCase,
++    insights: list[ReferenceInsight],
++    ideas: list[CreativeIdea],
++    script: ScriptDraft,
++    selected_idea_id: str | None = None,
++) -> None:
++    if not isinstance(script, ScriptDraft):
++        raise OutputSchemaError(
++            "ScriptDraft provider output must contain ScriptDraft objects; "
++            f"got {type(script).__name__}"
++        )
++
++    _require_non_empty("ScriptDraft.scenes", script.scenes)
++    _require_non_empty("ScriptDraft.source_usages", script.source_usages)
++    _require_unique_values(
++        "ScriptScene.scene_id",
++        [scene.scene_id for scene in script.scenes],
++    )
++    _require_unique_values(
++        "ScriptDraft.source_usages.usage_id",
++        [usage.usage_id for usage in script.source_usages],
++    )
++
++    reference_ids = {video.reference_id for video in golden_case.reference_videos}
++    fact_ids = {fact.fact_id for fact in golden_case.product_facts}
++    selling_point_ids = {point.selling_point_id for point in golden_case.selling_points}
++    selling_points_by_id = {
++        point.selling_point_id: point for point in golden_case.selling_points
++    }
++    insight_ids = {insight.insight_id for insight in insights}
++    ideas_by_id = {idea.idea_id: idea for idea in ideas}
++    idea_ids = set(ideas_by_id)
++
++    for insight in insights:
++        _require_existing_id(
++            "ReferenceInsight.reference_id",
++            insight.reference_id,
++            reference_ids,
++        )
++
++    if script.product_version_id != golden_case.product_profile.product_version_id:
++        raise OutputReferenceError(
++            "ScriptDraft product_version_id must match Golden Case "
++            f"product_version_id={golden_case.product_profile.product_version_id}; "
++            f"got {script.product_version_id}"
++        )
++    _require_existing_id("ScriptDraft.creative_idea_id", script.creative_idea_id, idea_ids)
++    if selected_idea_id is not None and script.creative_idea_id != selected_idea_id:
++        raise OutputReferenceError(
++            "ScriptDraft.creative_idea_id must match human selected idea; "
++            f"selected_idea_id={selected_idea_id}; got {script.creative_idea_id}"
++        )
++
++    selected_idea = ideas_by_id[script.creative_idea_id]
++    selected_selling_point_ids = set(selected_idea.selected_selling_point_ids)
++    selected_insight_ids = set(selected_idea.source_insight_ids)
++
++    scene_fact_ids = {
++        fact_id for scene in script.scenes for fact_id in scene.fact_ids
++    }
++    scene_selling_point_ids = {
++        selling_point_id
++        for scene in script.scenes
++        for selling_point_id in scene.selling_point_ids
++    }
++
++    for usage in script.source_usages:
++        _validate_source_usage(usage, fact_ids, selling_point_ids, insight_ids)
++        if (
++            usage.source_type == "reference_insight"
++            and usage.source_id not in selected_insight_ids
++        ):
++            raise OutputReferenceError(
++                "ScriptDraft.source_usages reference_insight must belong to selected "
++                f"CreativeIdea({selected_idea.idea_id}); source_id={usage.source_id}"
++            )
++
++    for scene in script.scenes:
++        for selling_point_id in scene.selling_point_ids:
++            _require_existing_id(
++                f"ScriptScene({scene.scene_id}).selling_point_ids",
++                selling_point_id,
++                selling_point_ids,
++            )
++            if selling_point_id not in selected_selling_point_ids:
++                raise OutputReferenceError(
++                    "ScriptScene selling_point_ids must belong to selected "
++                    f"CreativeIdea({selected_idea.idea_id}); scene_id={scene.scene_id}; "
++                    f"selling_point_id={selling_point_id}"
++                )
++
++        supported_fact_ids = {
++            fact_id
++            for selling_point_id in scene.selling_point_ids
++            for fact_id in selling_points_by_id[selling_point_id].fact_ids
++        }
++        for fact_id in scene.fact_ids:
++            _require_existing_id(
++                f"ScriptScene({scene.scene_id}).fact_ids",
++                fact_id,
++                fact_ids,
++            )
++            if fact_id not in supported_fact_ids:
++                raise OutputReferenceError(
++                    "ScriptScene fact_ids must be supported by its selling_point_ids; "
++                    f"scene_id={scene.scene_id}; fact_id={fact_id}; "
++                    f"selling_point_ids={scene.selling_point_ids}"
++                )
++
++    for usage in script.source_usages:
++        if usage.source_type == "product_fact" and usage.source_id not in scene_fact_ids:
++            raise OutputReferenceError(
++                "ScriptDraft.source_usages product_fact must appear in "
++                f"ScriptScene.fact_ids; usage_id={usage.usage_id}; "
++                f"source_id={usage.source_id}"
++            )
++        if (
++            usage.source_type == "selling_point"
++            and usage.source_id not in scene_selling_point_ids
++        ):
++            raise OutputReferenceError(
++                "ScriptDraft.source_usages selling_point must appear in "
++                f"ScriptScene.selling_point_ids; usage_id={usage.usage_id}; "
++                f"source_id={usage.source_id}"
++            )
++
++
++def validate_output_fixture_set(
++    output: OutputFixtureSet,
++    golden_case: GoldenCase,
++) -> None:
++    validate_reference_insights(golden_case, output.reference_insights)
++    validate_creative_ideas(
++        golden_case,
++        output.reference_insights,
++        output.creative_ideas,
++    )
++    validate_script_draft(
++        golden_case,
++        output.reference_insights,
++        output.creative_ideas,
++        output.script_draft,
++    )
++
++
++def _validate_source_usage(
++    usage,
++    fact_ids: set[str],
++    selling_point_ids: set[str],
++    insight_ids: set[str],
++) -> None:
++    source_ids_by_type = {
++        "product_fact": fact_ids,
++        "selling_point": selling_point_ids,
++        "reference_insight": insight_ids,
++    }
++    valid_source_ids = source_ids_by_type[usage.source_type]
++    if usage.source_id not in valid_source_ids:
++        raise OutputReferenceError(
++            f"SourceUsage({usage.usage_id}) source_type={usage.source_type} "
++            f"does not match an existing source_id={usage.source_id}"
++        )
++
++
++def _require_existing_id(label: str, value: str, allowed_values: set[str]) -> None:
++    if value not in allowed_values:
++        raise OutputReferenceError(f"{label} references missing id={value}")
++
++
++def _require_non_empty(label: str, values: list[object]) -> None:
++    if not values:
++        raise OutputValidationError(f"{label} must not be empty")
++
++
++def _require_instances(label: str, values: list[object], expected_type: type) -> None:
++    invalid_types = [
++        type(value).__name__ for value in values if not isinstance(value, expected_type)
++    ]
++    if invalid_types:
++        raise OutputSchemaError(
++            f"{label} must contain {expected_type.__name__} objects; "
++            f"invalid_types={invalid_types}"
++        )
++
++
++def _require_unique_values(label: str, values: list[str]) -> None:
++    duplicates = sorted(value for value, count in Counter(values).items() if count > 1)
++    if duplicates:
++        raise OutputValidationError(
++            f"{label} values must be unique; duplicates={duplicates}"
++        )
+diff --git a/src/tk_script_agent_lab/pipeline/__init__.py b/src/tk_script_agent_lab/pipeline/__init__.py
+new file mode 100644
+index 0000000..c740d25
+--- /dev/null
++++ b/src/tk_script_agent_lab/pipeline/__init__.py
+@@ -0,0 +1,13 @@
++from tk_script_agent_lab.pipeline.deterministic import (
++    CreativeOptions,
++    generate_selected_script,
++    prepare_creative_options,
++    select_creative_idea,
++)
++
++__all__ = [
++    "CreativeOptions",
++    "generate_selected_script",
++    "prepare_creative_options",
++    "select_creative_idea",
++]
+diff --git a/src/tk_script_agent_lab/pipeline/deterministic.py b/src/tk_script_agent_lab/pipeline/deterministic.py
+new file mode 100644
+index 0000000..1754c34
+--- /dev/null
++++ b/src/tk_script_agent_lab/pipeline/deterministic.py
+@@ -0,0 +1,116 @@
++from dataclasses import dataclass
++
++from tk_script_agent_lab.domain.errors import (
++    CreativeSelectionError,
++    OutputValidationError,
++    PipelineValidationError,
++    ProviderOutputError,
++)
++from tk_script_agent_lab.domain.models import (
++    CreativeIdea,
++    GoldenCase,
++    ReferenceInsight,
++    ScriptDraft,
++)
++from tk_script_agent_lab.domain.validators import (
++    validate_creative_ideas,
++    validate_reference_insights,
++    validate_script_draft,
++)
++from tk_script_agent_lab.providers.protocols import (
++    CreativeIdeaProvider,
++    ReferenceInsightProvider,
++    ScriptDraftProvider,
++)
++
++
++@dataclass(frozen=True)
++class CreativeOptions:
++    reference_insights: list[ReferenceInsight]
++    creative_ideas: list[CreativeIdea]
++
++
++def prepare_creative_options(
++    golden_case: GoldenCase,
++    insight_provider: ReferenceInsightProvider,
++    idea_provider: CreativeIdeaProvider,
++) -> CreativeOptions:
++    insights = insight_provider.generate(golden_case)
++    try:
++        validate_reference_insights(golden_case, insights)
++    except OutputValidationError as exc:
++        raise ProviderOutputError(
++            f"ReferenceInsightProvider returned invalid output: {exc}"
++        ) from exc
++
++    ideas = idea_provider.generate(golden_case, insights)
++    try:
++        validate_creative_ideas(golden_case, insights, ideas)
++    except OutputValidationError as exc:
++        raise ProviderOutputError(
++            f"CreativeIdeaProvider returned invalid output: {exc}"
++        ) from exc
++
++    return CreativeOptions(
++        reference_insights=[insight.model_copy(deep=True) for insight in insights],
++        creative_ideas=[idea.model_copy(deep=True) for idea in ideas],
++    )
++
++
++def generate_selected_script(
++    golden_case: GoldenCase,
++    options: CreativeOptions,
++    selected_idea_id: str,
++    script_provider: ScriptDraftProvider,
++) -> ScriptDraft:
++    try:
++        selected_idea = select_creative_idea(
++            options.creative_ideas,
++            selected_idea_id,
++        )
++    except CreativeSelectionError:
++        raise
++    except Exception as exc:
++        raise PipelineValidationError(
++            f"Creative options failed deterministic validation: {exc}"
++        ) from exc
++
++    script = script_provider.generate(
++        golden_case,
++        selected_idea,
++        options.reference_insights,
++    )
++    try:
++        validate_script_draft(
++            golden_case,
++            options.reference_insights,
++            options.creative_ideas,
++            script,
++            selected_idea_id=selected_idea.idea_id,
++        )
++    except OutputValidationError as exc:
++        raise ProviderOutputError(
++            f"ScriptDraftProvider returned invalid output: {exc}"
++        ) from exc
++
++    return script.model_copy(deep=True)
++
++
++def select_creative_idea(
++    ideas: list[CreativeIdea],
++    selected_idea_id: str,
++) -> CreativeIdea:
++    if not selected_idea_id or not selected_idea_id.strip():
++        raise CreativeSelectionError("selected_idea_id must be explicitly provided")
++
++    matches = [idea for idea in ideas if idea.idea_id == selected_idea_id]
++    if not matches:
++        raise CreativeSelectionError(
++            f"selected_idea_id references missing CreativeIdea id={selected_idea_id}"
++        )
++    if len(matches) > 1:
++        raise CreativeSelectionError(
++            f"selected_idea_id must identify one CreativeIdea; "
++            f"duplicate id={selected_idea_id}"
++        )
++    return matches[0].model_copy(deep=True)
+diff --git a/src/tk_script_agent_lab/providers/__init__.py b/src/tk_script_agent_lab/providers/__init__.py
+new file mode 100644
+index 0000000..cf3b4e5
+--- /dev/null
++++ b/src/tk_script_agent_lab/providers/__init__.py
+@@ -0,0 +1,19 @@
++from tk_script_agent_lab.providers.fake import (
++    FakeCreativeIdeaProvider,
++    FakeReferenceInsightProvider,
++    FakeScriptDraftProvider,
++)
++from tk_script_agent_lab.providers.protocols import (
++    CreativeIdeaProvider,
++    ReferenceInsightProvider,
++    ScriptDraftProvider,
++)
++
++__all__ = [
++    "CreativeIdeaProvider",
++    "FakeCreativeIdeaProvider",
++    "FakeReferenceInsightProvider",
++    "FakeScriptDraftProvider",
++    "ReferenceInsightProvider",
++    "ScriptDraftProvider",
++]
+diff --git a/src/tk_script_agent_lab/providers/fake.py b/src/tk_script_agent_lab/providers/fake.py
+new file mode 100644
+index 0000000..506c3cf
+--- /dev/null
++++ b/src/tk_script_agent_lab/providers/fake.py
+@@ -0,0 +1,45 @@
++from dataclasses import dataclass
++
++from tk_script_agent_lab.domain.models import (
++    CreativeIdea,
++    GoldenCase,
++    OutputFixtureSet,
++    ReferenceInsight,
++    ScriptDraft,
++)
++
++
++@dataclass(frozen=True)
++class FakeReferenceInsightProvider:
++    fixtures: OutputFixtureSet
++
++    def generate(self, golden_case: GoldenCase) -> list[ReferenceInsight]:
++        return [
++            insight.model_copy(deep=True)
++            for insight in self.fixtures.reference_insights
++        ]
++
++
++@dataclass(frozen=True)
++class FakeCreativeIdeaProvider:
++    fixtures: OutputFixtureSet
++
++    def generate(
++        self,
++        golden_case: GoldenCase,
++        insights: list[ReferenceInsight],
++    ) -> list[CreativeIdea]:
++        return [idea.model_copy(deep=True) for idea in self.fixtures.creative_ideas]
++
++
++@dataclass(frozen=True)
++class FakeScriptDraftProvider:
++    fixtures: OutputFixtureSet
++
++    def generate(
++        self,
++        golden_case: GoldenCase,
++        selected_idea: CreativeIdea,
++        insights: list[ReferenceInsight],
++    ) -> ScriptDraft:
++        return self.fixtures.script_draft.model_copy(deep=True)
+diff --git a/src/tk_script_agent_lab/providers/protocols.py b/src/tk_script_agent_lab/providers/protocols.py
+new file mode 100644
+index 0000000..73ad77b
+--- /dev/null
++++ b/src/tk_script_agent_lab/providers/protocols.py
+@@ -0,0 +1,35 @@
++from typing import Protocol, runtime_checkable
++
++from tk_script_agent_lab.domain.models import (
++    CreativeIdea,
++    GoldenCase,
++    ReferenceInsight,
++    ScriptDraft,
++)
++
++
++@runtime_checkable
++class ReferenceInsightProvider(Protocol):
++    def generate(self, golden_case: GoldenCase) -> list[ReferenceInsight]:
++        ...
++
++
++@runtime_checkable
++class CreativeIdeaProvider(Protocol):
++    def generate(
++        self,
++        golden_case: GoldenCase,
++        insights: list[ReferenceInsight],
++    ) -> list[CreativeIdea]:
++        ...
++
++
++@runtime_checkable
++class ScriptDraftProvider(Protocol):
++    def generate(
++        self,
++        golden_case: GoldenCase,
++        selected_idea: CreativeIdea,
++        insights: list[ReferenceInsight],
++    ) -> ScriptDraft:
++        ...
+diff --git a/tests/test_deterministic_pipeline.py b/tests/test_deterministic_pipeline.py
+new file mode 100644
+index 0000000..ebea21a
+--- /dev/null
++++ b/tests/test_deterministic_pipeline.py
+@@ -0,0 +1,406 @@
++from pathlib import Path
++
++import pytest
++
++from tk_script_agent_lab.domain import (
++    CreativeSelectionError,
++    ProviderOutputError,
++)
++from tk_script_agent_lab.fixtures import load_output_fixtures
++from tk_script_agent_lab.golden_case import load_golden_case
++from tk_script_agent_lab.pipeline import (
++    CreativeOptions,
++    generate_selected_script,
++    prepare_creative_options,
++    select_creative_idea,
++)
++from tk_script_agent_lab.providers import (
++    FakeCreativeIdeaProvider,
++    FakeReferenceInsightProvider,
++    FakeScriptDraftProvider,
++)
++
++
++ROOT = Path(__file__).resolve().parents[1]
++GOLDEN_CASE_DIR = ROOT / "data" / "golden_cases" / "car_vacuum_v1"
++FIXTURE_DIR = ROOT / "data" / "fixtures" / "car_vacuum_v1"
++
++
++@pytest.fixture
++def golden_case():
++    return load_golden_case(GOLDEN_CASE_DIR)
++
++
++@pytest.fixture
++def fixtures(golden_case):
++    return load_output_fixtures(FIXTURE_DIR, golden_case)
++
++
++def test_pipeline_normal_path_matches_fixture_and_is_deterministic(
++    golden_case,
++    fixtures,
++):
++    first_options = prepare_creative_options(
++        golden_case,
++        FakeReferenceInsightProvider(fixtures),
++        FakeCreativeIdeaProvider(fixtures),
++    )
++    first_script = generate_selected_script(
++        golden_case,
++        first_options,
++        "ci_001",
++        FakeScriptDraftProvider(fixtures),
++    )
++    second_options = prepare_creative_options(
++        golden_case,
++        FakeReferenceInsightProvider(fixtures),
++        FakeCreativeIdeaProvider(fixtures),
++    )
++    second_script = generate_selected_script(
++        golden_case,
++        second_options,
++        "ci_001",
++        FakeScriptDraftProvider(fixtures),
++    )
++
++    assert [item.model_dump() for item in first_options.reference_insights] == [
++        item.model_dump() for item in fixtures.reference_insights
++    ]
++    assert [item.model_dump() for item in first_options.creative_ideas] == [
++        item.model_dump() for item in fixtures.creative_ideas
++    ]
++    assert first_script.model_dump() == fixtures.script_draft.model_dump()
++    assert first_options == second_options
++    assert first_script == second_script
++
++
++def test_select_creative_idea_requires_explicit_existing_unique_id(fixtures):
++    selected = select_creative_idea(fixtures.creative_ideas, "ci_001")
++
++    assert selected.idea_id == "ci_001"
++    with pytest.raises(CreativeSelectionError, match="missing CreativeIdea id=ci_missing"):
++        select_creative_idea(fixtures.creative_ideas, "ci_missing")
++    with pytest.raises(CreativeSelectionError, match="explicitly provided"):
++        select_creative_idea(fixtures.creative_ideas, " ")
++
++    duplicate_ideas = fixtures.creative_ideas + [
++        fixtures.creative_ideas[0].model_copy(deep=True)
++    ]
++    with pytest.raises(CreativeSelectionError, match="duplicate id=ci_001"):
++        select_creative_idea(duplicate_ideas, "ci_001")
++
++
++def test_prepare_options_rejects_empty_insight_output(golden_case, fixtures):
++    class EmptyInsightProvider:
++        def generate(self, golden_case):
++            return []
++
++    with pytest.raises(ProviderOutputError, match="ReferenceInsight output"):
++        prepare_creative_options(
++            golden_case,
++            EmptyInsightProvider(),
++            FakeCreativeIdeaProvider(fixtures),
++        )
++
++
++def test_prepare_options_rejects_duplicate_insight_ids(golden_case, fixtures):
++    class DuplicateInsightProvider:
++        def generate(self, golden_case):
++            return [
++                fixtures.reference_insights[0],
++                fixtures.reference_insights[1].model_copy(
++                    update={"insight_id": fixtures.reference_insights[0].insight_id}
++                ),
++            ]
++
++    with pytest.raises(ProviderOutputError, match="ReferenceInsight.insight_id"):
++        prepare_creative_options(
++            golden_case,
++            DuplicateInsightProvider(),
++            FakeCreativeIdeaProvider(fixtures),
++        )
++
++
++def test_prepare_options_rejects_missing_reference_id(golden_case, fixtures):
++    class MissingReferenceInsightProvider:
++        def generate(self, golden_case):
++            return [
++                fixtures.reference_insights[0].model_copy(
++                    update={"reference_id": "ref_missing"}
++                )
++            ]
++
++    with pytest.raises(ProviderOutputError, match="ref_missing"):
++        prepare_creative_options(
++            golden_case,
++            MissingReferenceInsightProvider(),
++            FakeCreativeIdeaProvider(fixtures),
++        )
++
++
++def test_prepare_options_rejects_empty_idea_output(golden_case, fixtures):
++    class EmptyIdeaProvider:
++        def generate(self, golden_case, insights):
++            return []
++
++    with pytest.raises(ProviderOutputError, match="CreativeIdea output"):
++        prepare_creative_options(
++            golden_case,
++            FakeReferenceInsightProvider(fixtures),
++            EmptyIdeaProvider(),
++        )
++
++
++def test_prepare_options_rejects_duplicate_idea_ids(golden_case, fixtures):
++    class DuplicateIdeaProvider:
++        def generate(self, golden_case, insights):
++            return [
++                fixtures.creative_ideas[0],
++                fixtures.creative_ideas[1].model_copy(
++                    update={"idea_id": fixtures.creative_ideas[0].idea_id}
++                ),
++            ]
++
++    with pytest.raises(ProviderOutputError, match="CreativeIdea.idea_id"):
++        prepare_creative_options(
++            golden_case,
++            FakeReferenceInsightProvider(fixtures),
++            DuplicateIdeaProvider(),
++        )
++
++
++def test_prepare_options_rejects_missing_selling_point_id(golden_case, fixtures):
++    class MissingSellingPointIdeaProvider:
++        def generate(self, golden_case, insights):
++            return [
++                fixtures.creative_ideas[0].model_copy(
++                    update={"selected_selling_point_ids": ["sp_missing"]}
++                )
++            ]
++
++    with pytest.raises(ProviderOutputError, match="sp_missing"):
++        prepare_creative_options(
++            golden_case,
++            FakeReferenceInsightProvider(fixtures),
++            MissingSellingPointIdeaProvider(),
++        )
++
++
++def test_prepare_options_rejects_idea_insight_not_returned_by_provider(
++    golden_case,
++    fixtures,
++):
++    class MissingInsightIdeaProvider:
++        def generate(self, golden_case, insights):
++            return [
++                fixtures.creative_ideas[0].model_copy(
++                    update={"source_insight_ids": ["ri_missing"]}
++                )
++            ]
++
++    with pytest.raises(ProviderOutputError, match="ri_missing"):
++        prepare_creative_options(
++            golden_case,
++            FakeReferenceInsightProvider(fixtures),
++            MissingInsightIdeaProvider(),
++        )
++
++
++def test_generate_script_rejects_wrong_product_version(golden_case, fixtures):
++    class WrongVersionScriptProvider:
++        def generate(self, golden_case, selected_idea, insights):
++            return fixtures.script_draft.model_copy(
++                update={"product_version_id": "other_version"}
++            )
++
++    options = CreativeOptions(fixtures.reference_insights, fixtures.creative_ideas)
++    with pytest.raises(ProviderOutputError, match="product_version_id"):
++        generate_selected_script(
++            golden_case,
++            options,
++            "ci_001",
++            WrongVersionScriptProvider(),
++        )
++
++
++def test_generate_script_rejects_script_for_different_selected_idea(
++    golden_case,
++    fixtures,
++):
++    options = CreativeOptions(fixtures.reference_insights, fixtures.creative_ideas)
++
++    with pytest.raises(ProviderOutputError, match="selected_idea_id=ci_002"):
++        generate_selected_script(
++            golden_case,
++            options,
++            "ci_002",
++            FakeScriptDraftProvider(fixtures),
++        )
++
++
++def test_generate_script_rejects_scene_selling_point_outside_selected_idea(
++    golden_case,
++    fixtures,
++):
++    class OutOfBoundsSellingPointScriptProvider:
++        def generate(self, golden_case, selected_idea, insights):
++            scenes = [
++                scene.model_copy(deep=True) for scene in fixtures.script_draft.scenes
++            ]
++            scenes[0].selling_point_ids = ["sp_002"]
++            scenes[0].fact_ids = ["pf_002"]
++            return fixtures.script_draft.model_copy(update={"scenes": scenes})
++
++    options = CreativeOptions(fixtures.reference_insights, fixtures.creative_ideas)
++    with pytest.raises(ProviderOutputError, match="sp_002"):
++        generate_selected_script(
++            golden_case,
++            options,
++            "ci_001",
++            OutOfBoundsSellingPointScriptProvider(),
++        )
++
++
++def test_generate_script_rejects_fact_not_supported_by_scene_selling_point(
++    golden_case,
++    fixtures,
++):
++    class UnsupportedFactScriptProvider:
++        def generate(self, golden_case, selected_idea, insights):
++            scenes = [
++                scene.model_copy(deep=True) for scene in fixtures.script_draft.scenes
++            ]
++            scenes[0].fact_ids = ["pf_004"]
++            return fixtures.script_draft.model_copy(update={"scenes": scenes})
++
++    options = CreativeOptions(fixtures.reference_insights, fixtures.creative_ideas)
++    with pytest.raises(ProviderOutputError, match="pf_004"):
++        generate_selected_script(
++            golden_case,
++            options,
++            "ci_001",
++            UnsupportedFactScriptProvider(),
++        )
++
++
++def test_generate_script_rejects_source_usage_fact_not_used_in_scenes(
++    golden_case,
++    fixtures,
++):
++    class UnusedFactUsageScriptProvider:
++        def generate(self, golden_case, selected_idea, insights):
++            usages = [
++                usage.model_copy(deep=True)
++                for usage in fixtures.script_draft.source_usages
++            ]
++            usages[0].source_id = "pf_004"
++            return fixtures.script_draft.model_copy(update={"source_usages": usages})
++
++    options = CreativeOptions(fixtures.reference_insights, fixtures.creative_ideas)
++    with pytest.raises(ProviderOutputError, match="ScriptScene.fact_ids"):
++        generate_selected_script(
++            golden_case,
++            options,
++            "ci_001",
++            UnusedFactUsageScriptProvider(),
++        )
++
++
++def test_generate_script_rejects_source_usage_selling_point_not_used_in_scenes(
++    golden_case,
++    fixtures,
++):
++    class UnusedSellingPointUsageScriptProvider:
++        def generate(self, golden_case, selected_idea, insights):
++            usages = [
++                usage.model_copy(deep=True)
++                for usage in fixtures.script_draft.source_usages
++            ]
++            usages[2].source_id = "sp_002"
++            return fixtures.script_draft.model_copy(update={"source_usages": usages})
++
++    options = CreativeOptions(fixtures.reference_insights, fixtures.creative_ideas)
++    with pytest.raises(ProviderOutputError, match="ScriptScene.selling_point_ids"):
++        generate_selected_script(
++            golden_case,
++            options,
++            "ci_001",
++            UnusedSellingPointUsageScriptProvider(),
++        )
++
++
++def test_generate_script_rejects_reference_insight_outside_selected_idea(
++    golden_case,
++    fixtures,
++):
++    scenes = [
++        scene.model_copy(update={"selling_point_ids": ["sp_002"], "fact_ids": ["pf_002"]})
++        for scene in fixtures.script_draft.scenes
++    ]
++    usages = [
++        usage.model_copy(deep=True) for usage in fixtures.script_draft.source_usages
++    ]
++    usages[0].source_id = "pf_002"
++    usages[1].source_id = "pf_002"
++    usages[2].source_id = "sp_002"
++    script = fixtures.script_draft.model_copy(
++        update={"creative_idea_id": "ci_002", "scenes": scenes, "source_usages": usages}
++    )
++
++    class WrongInsightUsageScriptProvider:
++        def generate(self, golden_case, selected_idea, insights):
++            return script
++
++    options = CreativeOptions(fixtures.reference_insights, fixtures.creative_ideas)
++    with pytest.raises(ProviderOutputError, match="ri_001"):
++        generate_selected_script(
++            golden_case,
++            options,
++            "ci_002",
++            WrongInsightUsageScriptProvider(),
++        )
++
++
++def test_generate_script_rejects_duplicate_scene_ids(golden_case, fixtures):
++    class DuplicateSceneScriptProvider:
++        def generate(self, golden_case, selected_idea, insights):
++            scenes = [
++                scene.model_copy(deep=True) for scene in fixtures.script_draft.scenes
++            ]
++            scenes[1].scene_id = scenes[0].scene_id
++            return fixtures.script_draft.model_copy(update={"scenes": scenes})
++
++    options = CreativeOptions(fixtures.reference_insights, fixtures.creative_ideas)
++    with pytest.raises(ProviderOutputError, match="ScriptScene.scene_id"):
++        generate_selected_script(
++            golden_case,
++            options,
++            "ci_001",
++            DuplicateSceneScriptProvider(),
++        )
++
++
++def test_generate_script_rejects_empty_scene_or_usage_lists(golden_case, fixtures):
++    class EmptyScenesScriptProvider:
++        def generate(self, golden_case, selected_idea, insights):
++            return fixtures.script_draft.model_copy(update={"scenes": []})
++
++    class EmptyUsagesScriptProvider:
++        def generate(self, golden_case, selected_idea, insights):
++            return fixtures.script_draft.model_copy(update={"source_usages": []})
++
++    options = CreativeOptions(fixtures.reference_insights, fixtures.creative_ideas)
++    with pytest.raises(ProviderOutputError, match="ScriptDraft.scenes"):
++        generate_selected_script(
++            golden_case,
++            options,
++            "ci_001",
++            EmptyScenesScriptProvider(),
++        )
++    with pytest.raises(ProviderOutputError, match="ScriptDraft.source_usages"):
++        generate_selected_script(
++            golden_case,
++            options,
++            "ci_001",
++            EmptyUsagesScriptProvider(),
++        )
+diff --git a/tests/test_fake_providers.py b/tests/test_fake_providers.py
+new file mode 100644
+index 0000000..79117ce
+--- /dev/null
++++ b/tests/test_fake_providers.py
+@@ -0,0 +1,81 @@
++import random
++import socket
++import time
++from pathlib import Path
++
++from tk_script_agent_lab.fixtures import load_output_fixtures
++from tk_script_agent_lab.golden_case import load_golden_case
++from tk_script_agent_lab.providers import (
++    FakeCreativeIdeaProvider,
++    FakeReferenceInsightProvider,
++    FakeScriptDraftProvider,
++)
++
++
++ROOT = Path(__file__).resolve().parents[1]
++GOLDEN_CASE_DIR = ROOT / "data" / "golden_cases" / "car_vacuum_v1"
++FIXTURE_DIR = ROOT / "data" / "fixtures" / "car_vacuum_v1"
++
++
++def load_case_and_fixtures():
++    golden_case = load_golden_case(GOLDEN_CASE_DIR)
++    fixtures = load_output_fixtures(FIXTURE_DIR, golden_case)
++    return golden_case, fixtures
++
++
++def test_fake_providers_return_fixture_objects_without_api_key(monkeypatch):
++    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
++    golden_case, fixtures = load_case_and_fixtures()
++
++    insights = FakeReferenceInsightProvider(fixtures).generate(golden_case)
++    ideas = FakeCreativeIdeaProvider(fixtures).generate(golden_case, insights)
++    script = FakeScriptDraftProvider(fixtures).generate(
++        golden_case,
++        ideas[0],
++        insights,
++    )
++
++    assert [insight.model_dump() for insight in insights] == [
++        insight.model_dump() for insight in fixtures.reference_insights
++    ]
++    assert [idea.model_dump() for idea in ideas] == [
++        idea.model_dump() for idea in fixtures.creative_ideas
++    ]
++    assert script.model_dump() == fixtures.script_draft.model_dump()
++
++
++def test_fake_provider_output_is_repeatable_and_isolated():
++    golden_case, fixtures = load_case_and_fixtures()
++    provider = FakeReferenceInsightProvider(fixtures)
++
++    first = provider.generate(golden_case)
++    first[0].summary = "mutated outside provider"
++    second = provider.generate(golden_case)
++
++    assert second[0].summary == fixtures.reference_insights[0].summary
++    assert [item.model_dump() for item in second] == [
++        item.model_dump() for item in provider.generate(golden_case)
++    ]
++
++
++def test_fake_providers_do_not_use_network_random_or_current_time(monkeypatch):
++    golden_case, fixtures = load_case_and_fixtures()
++
++    def fail(*args, **kwargs):
++        raise AssertionError("external boundary should not be used")
++
++    monkeypatch.setattr(socket, "socket", fail)
++    monkeypatch.setattr(random, "random", fail)
++    monkeypatch.setattr(time, "time", fail)
++
++    insights = FakeReferenceInsightProvider(fixtures).generate(golden_case)
++    ideas = FakeCreativeIdeaProvider(fixtures).generate(golden_case, insights)
++    script = FakeScriptDraftProvider(fixtures).generate(
++        golden_case,
++        ideas[0],
++        insights,
++    )
++
++    assert len(insights) == 3
++    assert len(ideas) == 3
++    assert script.script_id == "sd_001"
+diff --git a/tests/test_provider_protocols.py b/tests/test_provider_protocols.py
+new file mode 100644
+index 0000000..82faf7b
+--- /dev/null
++++ b/tests/test_provider_protocols.py
+@@ -0,0 +1,81 @@
++from pathlib import Path
++
++from tk_script_agent_lab.fixtures import load_output_fixtures
++from tk_script_agent_lab.golden_case import load_golden_case
++from tk_script_agent_lab.pipeline import (
++    generate_selected_script,
++    prepare_creative_options,
++)
++from tk_script_agent_lab.providers import (
++    CreativeIdeaProvider,
++    FakeCreativeIdeaProvider,
++    FakeReferenceInsightProvider,
++    FakeScriptDraftProvider,
++    ReferenceInsightProvider,
++    ScriptDraftProvider,
++)
++
++
++ROOT = Path(__file__).resolve().parents[1]
++GOLDEN_CASE_DIR = ROOT / "data" / "golden_cases" / "car_vacuum_v1"
++FIXTURE_DIR = ROOT / "data" / "fixtures" / "car_vacuum_v1"
++
++
++def load_case_and_fixtures():
++    golden_case = load_golden_case(GOLDEN_CASE_DIR)
++    fixtures = load_output_fixtures(FIXTURE_DIR, golden_case)
++    return golden_case, fixtures
++
++
++def test_fake_providers_satisfy_protocols():
++    golden_case, fixtures = load_case_and_fixtures()
++
++    insight_provider = FakeReferenceInsightProvider(fixtures)
++    idea_provider = FakeCreativeIdeaProvider(fixtures)
++    script_provider = FakeScriptDraftProvider(fixtures)
++
++    assert isinstance(insight_provider, ReferenceInsightProvider)
++    assert isinstance(idea_provider, CreativeIdeaProvider)
++    assert isinstance(script_provider, ScriptDraftProvider)
++    assert insight_provider.generate(golden_case)
++    assert idea_provider.generate(golden_case, fixtures.reference_insights)
++    assert script_provider.generate(
++        golden_case,
++        fixtures.creative_ideas[0],
++        fixtures.reference_insights,
++    )
++
++
++def test_pipeline_accepts_non_fake_protocol_implementations():
++    golden_case, fixtures = load_case_and_fixtures()
++
++    class StaticInsightProvider:
++        def generate(self, golden_case):
++            return fixtures.reference_insights
++
++    class StaticIdeaProvider:
++        def generate(self, golden_case, insights):
++            return fixtures.creative_ideas
++
++    class StaticScriptProvider:
++        def generate(self, golden_case, selected_idea, insights):
++            return fixtures.script_draft
++
++    options = prepare_creative_options(
++        golden_case,
++        StaticInsightProvider(),
++        StaticIdeaProvider(),
++    )
++    script = generate_selected_script(
++        golden_case,
++        options,
++        "ci_001",
++        StaticScriptProvider(),
++    )
++
++    assert [idea.idea_id for idea in options.creative_ideas] == [
++        "ci_001",
++        "ci_002",
++        "ci_003",
++    ]
++    assert script.script_id == "sd_001"

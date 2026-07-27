@@ -44,3 +44,19 @@ class OutputSchemaError(OutputValidationError):
 
 class OutputReferenceError(OutputValidationError):
     """Raised when output fixture data references missing or mismatched IDs."""
+
+
+class ProviderError(Exception):
+    """Base error for provider contract and execution failures."""
+
+
+class ProviderOutputError(ProviderError):
+    """Raised when a provider returns data that fails deterministic validation."""
+
+
+class CreativeSelectionError(Exception):
+    """Raised when a human-provided creative idea selection is invalid."""
+
+
+class PipelineValidationError(Exception):
+    """Raised when deterministic pipeline validation fails."""
