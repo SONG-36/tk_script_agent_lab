@@ -1,0 +1,61 @@
+[
+  {
+    "reference_id": "ref_001",
+    "platform": "TikTok",
+    "url": "https://example.com/reference-video-1",
+    "title": "Seat gap crumb cleanup before and after",
+    "creator_or_source": "manual_placeholder",
+    "manual_summary": "Video opens with a close-up of crumbs packed in a seat gap, then shows a narrow nozzle cleaning the gap in one pass.",
+    "borrowable_patterns": [
+      "close-up mess first",
+      "immediate visual payoff",
+      "before-after split"
+    ],
+    "do_not_copy": [
+      "exact shot sequence",
+      "creator wording",
+      "music or branded captions"
+    ],
+    "risk_notes": [
+      "Avoid implying one pass always removes all debris."
+    ]
+  },
+  {
+    "reference_id": "ref_002",
+    "platform": "TikTok",
+    "url": "https://example.com/reference-video-2",
+    "title": "Quick car reset before pickup",
+    "creator_or_source": "manual_placeholder",
+    "manual_summary": "A driver notices the back seat floor is messy before picking someone up, then does a fast 20-second cleanup routine.",
+    "borrowable_patterns": [
+      "time-pressure story",
+      "driver POV",
+      "quick reset structure"
+    ],
+    "do_not_copy": [
+      "same character setup",
+      "same caption phrasing"
+    ],
+    "risk_notes": []
+  },
+  {
+    "reference_id": "ref_003",
+    "platform": "TikTok",
+    "url": "https://example.com/reference-video-3",
+    "title": "ASMR dust cleanup close-ups",
+    "creator_or_source": "manual_placeholder",
+    "manual_summary": "Uses tight macro shots and sound-focused cleaning clips to make dust removal satisfying.",
+    "borrowable_patterns": [
+      "ASMR cleaning sound",
+      "macro dust shot",
+      "satisfying visual rhythm"
+    ],
+    "do_not_copy": [
+      "exact edit rhythm",
+      "same camera angles in same order"
+    ],
+    "risk_notes": [
+      "Keep claims factual; satisfaction is visual, not performance guarantee."
+    ]
+  }
+]

@@ -1,0 +1,60 @@
+[
+  {
+    "fact_id": "pf_001",
+    "product_version_id": "prod_car_vacuum_001_v1",
+    "fact_type": "accessory",
+    "fact_text": "Includes a crevice nozzle for narrow gaps.",
+    "evidence_source": "manual_user_input",
+    "confidence": "user_provided",
+    "allowed_usage": [
+      "seat gap cleaning",
+      "narrow space demonstration"
+    ],
+    "risk_notes": []
+  },
+  {
+    "fact_id": "pf_002",
+    "product_version_id": "prod_car_vacuum_001_v1",
+    "fact_type": "power",
+    "fact_text": "Cordless handheld form factor.",
+    "evidence_source": "manual_user_input",
+    "confidence": "user_provided",
+    "allowed_usage": [
+      "quick cleanup",
+      "portable use"
+    ],
+    "risk_notes": [
+      "Do not infer battery duration unless provided."
+    ]
+  },
+  {
+    "fact_id": "pf_003",
+    "product_version_id": "prod_car_vacuum_001_v1",
+    "fact_type": "use_case",
+    "fact_text": "Designed for cleaning crumbs, dust, and small dry debris inside a car.",
+    "evidence_source": "manual_user_input",
+    "confidence": "user_provided",
+    "allowed_usage": [
+      "crumb cleanup",
+      "dust cleanup",
+      "small debris demonstration"
+    ],
+    "risk_notes": [
+      "Do not claim wet spill cleanup unless verified."
+    ]
+  },
+  {
+    "fact_id": "pf_004",
+    "product_version_id": "prod_car_vacuum_001_v1",
+    "fact_type": "charging",
+    "fact_text": "Uses Type-C charging.",
+    "evidence_source": "manual_user_input",
+    "confidence": "user_provided",
+    "allowed_usage": [
+      "modern charging convenience"
+    ],
+    "risk_notes": [
+      "Do not state exact charging time unless provided."
+    ]
+  }
+]

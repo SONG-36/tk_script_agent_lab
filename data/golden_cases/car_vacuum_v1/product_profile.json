@@ -1,0 +1,32 @@
+{
+  "product_id": "prod_car_vacuum_001",
+  "product_version_id": "prod_car_vacuum_001_v1",
+  "product_name": "Portable Car Vacuum Cleaner",
+  "category": "car_cleaning",
+  "target_market": "US TikTok",
+  "target_audience": [
+    "car owners",
+    "parents with kids",
+    "rideshare drivers",
+    "people who eat snacks in the car"
+  ],
+  "primary_use_scenarios": [
+    "seat gap crumbs",
+    "floor mat dust",
+    "trunk debris",
+    "quick daily cleanup"
+  ],
+  "tone_preferences": [
+    "practical",
+    "visual",
+    "fast-paced",
+    "not overhyped"
+  ],
+  "prohibited_claims": [
+    "do not claim medical-grade cleaning",
+    "do not claim professional detailing replacement",
+    "do not invent suction power, battery life, waterproof rating, or certification",
+    "do not use absolute claims like best, strongest, guaranteed"
+  ],
+  "notes": "Template case. Replace placeholder facts with verified product data before real generation."
+}

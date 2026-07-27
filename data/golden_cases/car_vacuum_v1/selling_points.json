@@ -1,0 +1,74 @@
+[
+  {
+    "selling_point_id": "sp_001",
+    "title": "Clean narrow seat gaps quickly",
+    "description": "Position the product as useful for crumbs and dust in narrow car seat gaps.",
+    "fact_ids": [
+      "pf_001",
+      "pf_003"
+    ],
+    "target_pain_point": "crumbs and dust trapped between seats",
+    "target_audience": [
+      "parents with kids",
+      "daily commuters"
+    ],
+    "allowed_expressions": [
+      "helps clean narrow gaps",
+      "useful for seat gap crumbs"
+    ],
+    "prohibited_expressions": [
+      "removes every hidden germ",
+      "professional detailer result guaranteed"
+    ],
+    "risk_notes": [
+      "Must show dry debris only unless wet cleanup is verified."
+    ]
+  },
+  {
+    "selling_point_id": "sp_002",
+    "title": "Quick cordless cleanup",
+    "description": "Highlight the convenience of picking it up for short car cleanups without plugging into the car first.",
+    "fact_ids": [
+      "pf_002"
+    ],
+    "target_pain_point": "small messes feel annoying to clean with a full-size vacuum",
+    "target_audience": [
+      "rideshare drivers",
+      "busy car owners"
+    ],
+    "allowed_expressions": [
+      "grab-and-clean",
+      "quick daily cleanup"
+    ],
+    "prohibited_expressions": [
+      "runs all month",
+      "never needs charging"
+    ],
+    "risk_notes": [
+      "Do not imply unlimited runtime."
+    ]
+  },
+  {
+    "selling_point_id": "sp_003",
+    "title": "Car interior touch-up before passengers arrive",
+    "description": "Use the product as a fast pre-ride or pre-trip touch-up tool.",
+    "fact_ids": [
+      "pf_002",
+      "pf_003"
+    ],
+    "target_pain_point": "car looks messy right before someone gets in",
+    "target_audience": [
+      "rideshare drivers",
+      "people with frequent passengers"
+    ],
+    "allowed_expressions": [
+      "quick touch-up",
+      "clean visible crumbs before a ride"
+    ],
+    "prohibited_expressions": [
+      "deep cleans all upholstery",
+      "restores car interior like new"
+    ],
+    "risk_notes": []
+  }
+]
