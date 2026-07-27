@@ -16,9 +16,13 @@ README.md
 REPOSITORY_WORKFLOW.md
 REVIEW_RUBRIC_TEMPLATE.md
 RUN_TRACE_SPEC.md
+SYSTEM_MAP.md
 TASK_CONTRACT_TEMPLATE.md
 TECHNOLOGY_PURPOSE.md
 data/fixtures/.gitkeep
+data/fixtures/car_vacuum_v1/creative_ideas.json
+data/fixtures/car_vacuum_v1/reference_insights.json
+data/fixtures/car_vacuum_v1/script_draft.json
 data/golden_cases/car_vacuum_v1/expected_requirements.md
 data/golden_cases/car_vacuum_v1/product_facts.json
 data/golden_cases/car_vacuum_v1/product_profile.json
@@ -37,9 +41,13 @@ src/tk_script_agent_lab/__init__.py
 src/tk_script_agent_lab/domain/__init__.py
 src/tk_script_agent_lab/domain/errors.py
 src/tk_script_agent_lab/domain/models.py
+src/tk_script_agent_lab/fixtures/__init__.py
+src/tk_script_agent_lab/fixtures/loader.py
 src/tk_script_agent_lab/golden_case/__init__.py
 src/tk_script_agent_lab/golden_case/loader.py
 task_contracts/TEMPLATE.md
 tests/.gitkeep
 tests/test_baseline.py
 tests/test_golden_case_loader.py
+tests/test_output_fixtures.py
+tests/test_output_models.py

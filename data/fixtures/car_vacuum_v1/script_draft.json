@@ -1,0 +1,76 @@
+{
+  "script_id": "sd_001",
+  "product_version_id": "prod_car_vacuum_001_v1",
+  "creative_idea_id": "ci_001",
+  "language": "en-US",
+  "target_duration_seconds": 24,
+  "hook": "That line of crumbs hiding beside the seat is the whole problem.",
+  "scenes": [
+    {
+      "scene_id": "scene_001",
+      "duration_seconds": 6,
+      "visual": "Learning test fixture: close shot of dry crumbs in the seat gap, with the vacuum and crevice nozzle visible before use.",
+      "voiceover": "If crumbs keep sliding into that narrow seat gap, start by showing the mess clearly.",
+      "selling_point_ids": [
+        "sp_001"
+      ],
+      "fact_ids": [
+        "pf_001",
+        "pf_003"
+      ]
+    },
+    {
+      "scene_id": "scene_002",
+      "duration_seconds": 10,
+      "visual": "Learning test fixture: guide the crevice nozzle along the narrow gap and show dry crumbs being cleaned.",
+      "voiceover": "The crevice nozzle is the part to highlight here, because this scene is about narrow dry-debris cleanup.",
+      "selling_point_ids": [
+        "sp_001"
+      ],
+      "fact_ids": [
+        "pf_001",
+        "pf_003"
+      ]
+    },
+    {
+      "scene_id": "scene_003",
+      "duration_seconds": 8,
+      "visual": "Learning test fixture: show the cleaned visible gap without claiming a guaranteed result.",
+      "voiceover": "Keep the promise practical: it helps clean narrow gaps and visible crumbs without inventing performance numbers.",
+      "selling_point_ids": [
+        "sp_001"
+      ],
+      "fact_ids": [
+        "pf_001",
+        "pf_003"
+      ]
+    }
+  ],
+  "cta": "Use this as a simple car-seat-gap cleanup example, not a production claim.",
+  "source_usages": [
+    {
+      "usage_id": "script_su_001",
+      "source_type": "product_fact",
+      "source_id": "pf_001",
+      "used_for": "Supports the crevice nozzle demonstration in scene_002."
+    },
+    {
+      "usage_id": "script_su_002",
+      "source_type": "product_fact",
+      "source_id": "pf_003",
+      "used_for": "Constrains scenes to crumbs, dust, and small dry debris."
+    },
+    {
+      "usage_id": "script_su_003",
+      "source_type": "selling_point",
+      "source_id": "sp_001",
+      "used_for": "Supports the narrow seat gap cleanup angle."
+    },
+    {
+      "usage_id": "script_su_004",
+      "source_type": "reference_insight",
+      "source_id": "ri_001",
+      "used_for": "Supports the close-up mess first structure without copying the reference video."
+    }
+  ]
+}

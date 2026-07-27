@@ -1,0 +1,53 @@
+[
+  {
+    "idea_id": "ci_001",
+    "title": "Learning fixture seat gap crumb reset",
+    "angle": "A practical close-up cleanup of dry crumbs in the narrow space between car seats.",
+    "hook": "That line of crumbs hiding beside the seat is the whole problem.",
+    "selected_selling_point_ids": [
+      "sp_001"
+    ],
+    "source_insight_ids": [
+      "ri_001"
+    ],
+    "risk_notes": [
+      "Learning test fixture only.",
+      "Avoid one-pass guarantees and wet-spill claims."
+    ]
+  },
+  {
+    "idea_id": "ci_002",
+    "title": "Learning fixture passenger pickup touch-up",
+    "angle": "A rideshare-style quick visible cleanup before someone gets in the car.",
+    "hook": "Someone is getting in soon, and the back seat floor still has crumbs.",
+    "selected_selling_point_ids": [
+      "sp_002",
+      "sp_003"
+    ],
+    "source_insight_ids": [
+      "ri_002"
+    ],
+    "risk_notes": [
+      "Learning test fixture only.",
+      "Do not imply unlimited runtime or a deep upholstery clean."
+    ]
+  },
+  {
+    "idea_id": "ci_003",
+    "title": "Learning fixture satisfying dry dust close-ups",
+    "angle": "A visual rhythm of dry dust and small debris cleanup inside the car.",
+    "hook": "Tiny dry messes look bigger when the camera gets close.",
+    "selected_selling_point_ids": [
+      "sp_001",
+      "sp_003"
+    ],
+    "source_insight_ids": [
+      "ri_001",
+      "ri_003"
+    ],
+    "risk_notes": [
+      "Learning test fixture only.",
+      "Do not claim medical-grade cleaning or strongest suction."
+    ]
+  }
+]

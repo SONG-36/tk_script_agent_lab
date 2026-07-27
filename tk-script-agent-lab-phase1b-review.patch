@@ -1,0 +1,1188 @@
+diff --git a/FILE_MANIFEST.txt b/FILE_MANIFEST.txt
+index e653299..37cb107 100644
+--- a/FILE_MANIFEST.txt
++++ b/FILE_MANIFEST.txt
+@@ -19,6 +19,9 @@ RUN_TRACE_SPEC.md
+ TASK_CONTRACT_TEMPLATE.md
+ TECHNOLOGY_PURPOSE.md
+ data/fixtures/.gitkeep
++data/fixtures/car_vacuum_v1/creative_ideas.json
++data/fixtures/car_vacuum_v1/reference_insights.json
++data/fixtures/car_vacuum_v1/script_draft.json
+ data/golden_cases/car_vacuum_v1/expected_requirements.md
+ data/golden_cases/car_vacuum_v1/product_facts.json
+ data/golden_cases/car_vacuum_v1/product_profile.json
+@@ -37,9 +40,13 @@ src/tk_script_agent_lab/__init__.py
+ src/tk_script_agent_lab/domain/__init__.py
+ src/tk_script_agent_lab/domain/errors.py
+ src/tk_script_agent_lab/domain/models.py
++src/tk_script_agent_lab/fixtures/__init__.py
++src/tk_script_agent_lab/fixtures/loader.py
+ src/tk_script_agent_lab/golden_case/__init__.py
+ src/tk_script_agent_lab/golden_case/loader.py
+ task_contracts/TEMPLATE.md
+ tests/.gitkeep
+ tests/test_baseline.py
+ tests/test_golden_case_loader.py
++tests/test_output_fixtures.py
++tests/test_output_models.py
+diff --git a/src/tk_script_agent_lab/domain/__init__.py b/src/tk_script_agent_lab/domain/__init__.py
+index 90eed98..87a2f33 100644
+--- a/src/tk_script_agent_lab/domain/__init__.py
++++ b/src/tk_script_agent_lab/domain/__init__.py
+@@ -4,24 +4,50 @@ from tk_script_agent_lab.domain.errors import (
+     GoldenCaseJsonError,
+     GoldenCasePathError,
+     GoldenCaseValidationError,
++    OutputFixtureError,
++    OutputFixtureFileError,
++    OutputFixtureJsonError,
++    OutputFixturePathError,
++    OutputReferenceError,
++    OutputSchemaError,
++    OutputValidationError,
+ )
+ from tk_script_agent_lab.domain.models import (
++    CreativeIdea,
+     GoldenCase,
++    OutputFixtureSet,
+     ProductFact,
+     ProductProfile,
++    ReferenceInsight,
+     ReferenceVideo,
++    ScriptDraft,
++    ScriptScene,
+     SellingPoint,
++    SourceUsage,
+ )
+ 
+ __all__ = [
++    "CreativeIdea",
+     "GoldenCase",
+     "GoldenCaseError",
+     "GoldenCaseFileError",
+     "GoldenCaseJsonError",
+     "GoldenCasePathError",
+     "GoldenCaseValidationError",
++    "OutputFixtureError",
++    "OutputFixtureFileError",
++    "OutputFixtureJsonError",
++    "OutputFixturePathError",
++    "OutputFixtureSet",
++    "OutputReferenceError",
++    "OutputSchemaError",
++    "OutputValidationError",
+     "ProductFact",
+     "ProductProfile",
++    "ReferenceInsight",
+     "ReferenceVideo",
++    "ScriptDraft",
++    "ScriptScene",
+     "SellingPoint",
++    "SourceUsage",
+ ]
+diff --git a/src/tk_script_agent_lab/domain/errors.py b/src/tk_script_agent_lab/domain/errors.py
+index ad3ce71..99876f0 100644
+--- a/src/tk_script_agent_lab/domain/errors.py
++++ b/src/tk_script_agent_lab/domain/errors.py
+@@ -16,3 +16,31 @@ class GoldenCaseJsonError(GoldenCaseError):
+ 
+ class GoldenCaseValidationError(GoldenCaseError):
+     """Raised when Golden Case data fails deterministic validation."""
++
++
++class OutputFixtureError(Exception):
++    """Base error for fixed output fixture loading and validation failures."""
++
++
++class OutputFixturePathError(OutputFixtureError):
++    """Raised when the output fixture directory is missing or invalid."""
++
++
++class OutputFixtureFileError(OutputFixtureError):
++    """Raised when a required output fixture file is missing or unreadable."""
++
++
++class OutputFixtureJsonError(OutputFixtureError):
++    """Raised when an output fixture JSON file cannot be decoded."""
++
++
++class OutputValidationError(OutputFixtureError):
++    """Base error for output fixture schema and deterministic validation failures."""
++
++
++class OutputSchemaError(OutputValidationError):
++    """Raised when output fixture data fails model or root-shape validation."""
++
++
++class OutputReferenceError(OutputValidationError):
++    """Raised when output fixture data references missing or mismatched IDs."""
+diff --git a/src/tk_script_agent_lab/domain/models.py b/src/tk_script_agent_lab/domain/models.py
+index 8ea8be4..8c7b996 100644
+--- a/src/tk_script_agent_lab/domain/models.py
++++ b/src/tk_script_agent_lab/domain/models.py
+@@ -1,9 +1,12 @@
+ from collections import Counter
+-from typing import Annotated
++from typing import Annotated, Literal
+ 
+ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+ 
+-from tk_script_agent_lab.domain.errors import GoldenCaseValidationError
++from tk_script_agent_lab.domain.errors import (
++    GoldenCaseValidationError,
++    OutputValidationError,
++)
+ 
+ 
+ NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+@@ -61,6 +64,89 @@ class ReferenceVideo(ExtraForbidModel):
+     risk_notes: list[NonEmptyString]
+ 
+ 
++class ReferenceInsight(ExtraForbidModel):
++    insight_id: NonEmptyString
++    reference_id: NonEmptyString
++    summary: NonEmptyString
++    reusable_pattern: NonEmptyString
++    risk_notes: list[NonEmptyString] = Field(min_length=1)
++
++
++class CreativeIdea(ExtraForbidModel):
++    idea_id: NonEmptyString
++    title: NonEmptyString
++    angle: NonEmptyString
++    hook: NonEmptyString
++    selected_selling_point_ids: list[NonEmptyString] = Field(min_length=1)
++    source_insight_ids: list[NonEmptyString] = Field(min_length=1)
++    risk_notes: list[NonEmptyString] = Field(min_length=1)
++
++
++SourceType = Literal["product_fact", "selling_point", "reference_insight"]
++
++
++class SourceUsage(ExtraForbidModel):
++    usage_id: NonEmptyString
++    source_type: SourceType
++    source_id: NonEmptyString
++    used_for: NonEmptyString
++
++
++class ScriptScene(ExtraForbidModel):
++    scene_id: NonEmptyString
++    duration_seconds: int = Field(gt=0)
++    visual: NonEmptyString
++    voiceover: NonEmptyString
++    selling_point_ids: list[NonEmptyString] = Field(min_length=1)
++    fact_ids: list[NonEmptyString] = Field(min_length=1)
++
++
++class ScriptDraft(ExtraForbidModel):
++    script_id: NonEmptyString
++    product_version_id: NonEmptyString
++    creative_idea_id: NonEmptyString
++    language: NonEmptyString
++    target_duration_seconds: int = Field(gt=0)
++    hook: NonEmptyString
++    scenes: list[ScriptScene] = Field(min_length=1)
++    cta: NonEmptyString
++    source_usages: list[SourceUsage] = Field(min_length=1)
++
++    @model_validator(mode="after")
++    def validate_script_ids(self) -> "ScriptDraft":
++        _require_unique_values(
++            "ScriptScene.scene_id",
++            [scene.scene_id for scene in self.scenes],
++            OutputValidationError,
++        )
++        _require_unique_values(
++            "ScriptDraft.source_usages.usage_id",
++            [usage.usage_id for usage in self.source_usages],
++            OutputValidationError,
++        )
++        return self
++
++
++class OutputFixtureSet(ExtraForbidModel):
++    reference_insights: list[ReferenceInsight] = Field(min_length=1)
++    creative_ideas: list[CreativeIdea] = Field(min_length=1)
++    script_draft: ScriptDraft
++
++    @model_validator(mode="after")
++    def validate_output_ids(self) -> "OutputFixtureSet":
++        _require_unique_values(
++            "ReferenceInsight.insight_id",
++            [insight.insight_id for insight in self.reference_insights],
++            OutputValidationError,
++        )
++        _require_unique_values(
++            "CreativeIdea.idea_id",
++            [idea.idea_id for idea in self.creative_ideas],
++            OutputValidationError,
++        )
++        return self
++
++
+ class GoldenCase(ExtraForbidModel):
+     product_profile: ProductProfile
+     product_facts: list[ProductFact] = Field(min_length=1)
+@@ -130,10 +216,14 @@ class GoldenCase(ExtraForbidModel):
+ 
+     @staticmethod
+     def _require_unique(label: str, values: list[str]) -> None:
+-        duplicates = sorted(
+-            value for value, count in Counter(values).items() if count > 1
+-        )
+-        if duplicates:
+-            raise GoldenCaseValidationError(
+-                f"{label} values must be unique; duplicates={duplicates}"
+-            )
++        _require_unique_values(label, values, GoldenCaseValidationError)
++
++
++def _require_unique_values(
++    label: str,
++    values: list[str],
++    error_type: type[Exception],
++) -> None:
++    duplicates = sorted(value for value, count in Counter(values).items() if count > 1)
++    if duplicates:
++        raise error_type(f"{label} values must be unique; duplicates={duplicates}")
+diff --git a/data/fixtures/car_vacuum_v1/creative_ideas.json b/data/fixtures/car_vacuum_v1/creative_ideas.json
+new file mode 100644
+index 0000000..5e8c106
+--- /dev/null
++++ b/data/fixtures/car_vacuum_v1/creative_ideas.json
+@@ -0,0 +1,53 @@
++[
++  {
++    "idea_id": "ci_001",
++    "title": "Learning fixture seat gap crumb reset",
++    "angle": "A practical close-up cleanup of dry crumbs in the narrow space between car seats.",
++    "hook": "That line of crumbs hiding beside the seat is the whole problem.",
++    "selected_selling_point_ids": [
++      "sp_001"
++    ],
++    "source_insight_ids": [
++      "ri_001"
++    ],
++    "risk_notes": [
++      "Learning test fixture only.",
++      "Avoid one-pass guarantees and wet-spill claims."
++    ]
++  },
++  {
++    "idea_id": "ci_002",
++    "title": "Learning fixture passenger pickup touch-up",
++    "angle": "A rideshare-style quick visible cleanup before someone gets in the car.",
++    "hook": "Someone is getting in soon, and the back seat floor still has crumbs.",
++    "selected_selling_point_ids": [
++      "sp_002",
++      "sp_003"
++    ],
++    "source_insight_ids": [
++      "ri_002"
++    ],
++    "risk_notes": [
++      "Learning test fixture only.",
++      "Do not imply unlimited runtime or a deep upholstery clean."
++    ]
++  },
++  {
++    "idea_id": "ci_003",
++    "title": "Learning fixture satisfying dry dust close-ups",
++    "angle": "A visual rhythm of dry dust and small debris cleanup inside the car.",
++    "hook": "Tiny dry messes look bigger when the camera gets close.",
++    "selected_selling_point_ids": [
++      "sp_001",
++      "sp_003"
++    ],
++    "source_insight_ids": [
++      "ri_001",
++      "ri_003"
++    ],
++    "risk_notes": [
++      "Learning test fixture only.",
++      "Do not claim medical-grade cleaning or strongest suction."
++    ]
++  }
++]
+diff --git a/data/fixtures/car_vacuum_v1/reference_insights.json b/data/fixtures/car_vacuum_v1/reference_insights.json
+new file mode 100644
+index 0000000..708975c
+--- /dev/null
++++ b/data/fixtures/car_vacuum_v1/reference_insights.json
+@@ -0,0 +1,32 @@
++[
++  {
++    "insight_id": "ri_001",
++    "reference_id": "ref_001",
++    "summary": "Learning test fixture: use a close-up messy seat gap as a visual setup, then show a narrow-gap cleanup payoff without claiming guaranteed one-pass performance.",
++    "reusable_pattern": "Start with a tight mess shot, move quickly to the crevice-nozzle demonstration, and keep the result framed as a practical visual example.",
++    "risk_notes": [
++      "Learning fixture only; not a real model analysis result.",
++      "Do not copy the exact reference sequence or claim all debris is always removed."
++    ]
++  },
++  {
++    "insight_id": "ri_002",
++    "reference_id": "ref_002",
++    "summary": "Learning test fixture: use a time-pressure car reset story before a passenger arrives, focused on quick visible cleanup.",
++    "reusable_pattern": "Frame the need as a short driver POV reset and keep the story about visible crumbs or dust inside the car.",
++    "risk_notes": [
++      "Learning fixture only; not a real model analysis result.",
++      "Do not reuse the same character setup or imply unlimited runtime."
++    ]
++  },
++  {
++    "insight_id": "ri_003",
++    "reference_id": "ref_003",
++    "summary": "Learning test fixture: borrow the satisfying macro-cleaning rhythm for dry dust and crumbs without making performance guarantees.",
++    "reusable_pattern": "Use close shots and sound-focused cleaning moments as presentation style, not as product proof.",
++    "risk_notes": [
++      "Learning fixture only; not a real model analysis result.",
++      "Keep satisfaction as a visual style, not a factual claim."
++    ]
++  }
++]
+diff --git a/data/fixtures/car_vacuum_v1/script_draft.json b/data/fixtures/car_vacuum_v1/script_draft.json
+new file mode 100644
+index 0000000..1aaa271
+--- /dev/null
++++ b/data/fixtures/car_vacuum_v1/script_draft.json
+@@ -0,0 +1,76 @@
++{
++  "script_id": "sd_001",
++  "product_version_id": "prod_car_vacuum_001_v1",
++  "creative_idea_id": "ci_001",
++  "language": "en-US",
++  "target_duration_seconds": 24,
++  "hook": "That line of crumbs hiding beside the seat is the whole problem.",
++  "scenes": [
++    {
++      "scene_id": "scene_001",
++      "duration_seconds": 6,
++      "visual": "Learning test fixture: close shot of dry crumbs in the seat gap, with the vacuum and crevice nozzle visible before use.",
++      "voiceover": "If crumbs keep sliding into that narrow seat gap, start by showing the mess clearly.",
++      "selling_point_ids": [
++        "sp_001"
++      ],
++      "fact_ids": [
++        "pf_001",
++        "pf_003"
++      ]
++    },
++    {
++      "scene_id": "scene_002",
++      "duration_seconds": 10,
++      "visual": "Learning test fixture: guide the crevice nozzle along the narrow gap and show dry crumbs being cleaned.",
++      "voiceover": "The crevice nozzle is the part to highlight here, because this scene is about narrow dry-debris cleanup.",
++      "selling_point_ids": [
++        "sp_001"
++      ],
++      "fact_ids": [
++        "pf_001",
++        "pf_003"
++      ]
++    },
++    {
++      "scene_id": "scene_003",
++      "duration_seconds": 8,
++      "visual": "Learning test fixture: show the cleaned visible gap without claiming a guaranteed result.",
++      "voiceover": "Keep the promise practical: it helps clean narrow gaps and visible crumbs without inventing performance numbers.",
++      "selling_point_ids": [
++        "sp_001"
++      ],
++      "fact_ids": [
++        "pf_001",
++        "pf_003"
++      ]
++    }
++  ],
++  "cta": "Use this as a simple car-seat-gap cleanup example, not a production claim.",
++  "source_usages": [
++    {
++      "usage_id": "script_su_001",
++      "source_type": "product_fact",
++      "source_id": "pf_001",
++      "used_for": "Supports the crevice nozzle demonstration in scene_002."
++    },
++    {
++      "usage_id": "script_su_002",
++      "source_type": "product_fact",
++      "source_id": "pf_003",
++      "used_for": "Constrains scenes to crumbs, dust, and small dry debris."
++    },
++    {
++      "usage_id": "script_su_003",
++      "source_type": "selling_point",
++      "source_id": "sp_001",
++      "used_for": "Supports the narrow seat gap cleanup angle."
++    },
++    {
++      "usage_id": "script_su_004",
++      "source_type": "reference_insight",
++      "source_id": "ri_001",
++      "used_for": "Supports the close-up mess first structure without copying the reference video."
++    }
++  ]
++}
+diff --git a/src/tk_script_agent_lab/fixtures/__init__.py b/src/tk_script_agent_lab/fixtures/__init__.py
+new file mode 100644
+index 0000000..2733d2e
+--- /dev/null
++++ b/src/tk_script_agent_lab/fixtures/__init__.py
+@@ -0,0 +1,3 @@
++from tk_script_agent_lab.fixtures.loader import load_output_fixtures
++
++__all__ = ["load_output_fixtures"]
+diff --git a/src/tk_script_agent_lab/fixtures/loader.py b/src/tk_script_agent_lab/fixtures/loader.py
+new file mode 100644
+index 0000000..b2e20d7
+--- /dev/null
++++ b/src/tk_script_agent_lab/fixtures/loader.py
+@@ -0,0 +1,213 @@
++import json
++from pathlib import Path
++from typing import Any
++
++from pydantic import ValidationError
++
++from tk_script_agent_lab.domain.errors import (
++    OutputFixtureFileError,
++    OutputFixtureJsonError,
++    OutputFixturePathError,
++    OutputReferenceError,
++    OutputSchemaError,
++    OutputValidationError,
++)
++from tk_script_agent_lab.domain.models import (
++    CreativeIdea,
++    GoldenCase,
++    OutputFixtureSet,
++    ReferenceInsight,
++    ScriptDraft,
++    SourceUsage,
++)
++
++
++REQUIRED_OUTPUT_FIXTURE_FILES = {
++    "reference_insights": "reference_insights.json",
++    "creative_ideas": "creative_ideas.json",
++    "script_draft": "script_draft.json",
++}
++
++
++def load_output_fixtures(
++    fixture_dir: Path,
++    golden_case: GoldenCase,
++) -> OutputFixtureSet:
++    path = Path(fixture_dir)
++    if not path.exists():
++        raise OutputFixturePathError(f"Output fixture directory does not exist: {path}")
++    if not path.is_dir():
++        raise OutputFixturePathError(f"Output fixture path is not a directory: {path}")
++
++    raw_insights = _read_json_file(
++        path / REQUIRED_OUTPUT_FIXTURE_FILES["reference_insights"]
++    )
++    raw_ideas = _read_json_file(path / REQUIRED_OUTPUT_FIXTURE_FILES["creative_ideas"])
++    raw_script = _read_json_file(path / REQUIRED_OUTPUT_FIXTURE_FILES["script_draft"])
++
++    _require_array("reference_insights.json", raw_insights)
++    _require_array("creative_ideas.json", raw_ideas)
++    _require_object("script_draft.json", raw_script)
++
++    try:
++        output = OutputFixtureSet(
++            reference_insights=[
++                ReferenceInsight.model_validate(item) for item in raw_insights
++            ],
++            creative_ideas=[CreativeIdea.model_validate(item) for item in raw_ideas],
++            script_draft=ScriptDraft.model_validate(raw_script),
++        )
++    except ValidationError as exc:
++        raise OutputSchemaError(f"Output fixture field validation failed: {exc}") from exc
++    except OutputValidationError:
++        raise
++
++    _validate_against_golden_case(output, golden_case)
++    return output
++
++
++def _read_json_file(path: Path) -> Any:
++    if not path.exists():
++        raise OutputFixtureFileError(f"Required output fixture file is missing: {path}")
++    try:
++        with path.open(encoding="utf-8") as file:
++            return json.load(file)
++    except UnicodeDecodeError as exc:
++        raise OutputFixtureJsonError(
++            f"Invalid text encoding in {path}: expected UTF-8 JSON"
++        ) from exc
++    except json.JSONDecodeError as exc:
++        raise OutputFixtureJsonError(f"Invalid JSON in {path}: {exc.msg}") from exc
++    except OSError as exc:
++        raise OutputFixtureFileError(
++            f"Could not read output fixture file {path}: {exc}"
++        ) from exc
++
++
++def _require_object(file_name: str, value: Any) -> None:
++    if not isinstance(value, dict):
++        raise OutputSchemaError(
++            f"{file_name} root must be a JSON object, got {type(value).__name__}"
++        )
++
++
++def _require_array(file_name: str, value: Any) -> None:
++    if not isinstance(value, list):
++        raise OutputSchemaError(
++            f"{file_name} root must be a JSON array, got {type(value).__name__}"
++        )
++
++
++def _validate_against_golden_case(
++    output: OutputFixtureSet,
++    golden_case: GoldenCase,
++) -> None:
++    reference_ids = {video.reference_id for video in golden_case.reference_videos}
++    fact_ids = {fact.fact_id for fact in golden_case.product_facts}
++    selling_point_ids = {point.selling_point_id for point in golden_case.selling_points}
++    selling_points_by_id = {
++        point.selling_point_id: point for point in golden_case.selling_points
++    }
++    insight_ids = {insight.insight_id for insight in output.reference_insights}
++    ideas_by_id = {idea.idea_id: idea for idea in output.creative_ideas}
++    idea_ids = set(ideas_by_id)
++
++    for insight in output.reference_insights:
++        _require_existing_id(
++            "ReferenceInsight.reference_id",
++            insight.reference_id,
++            reference_ids,
++        )
++
++    for idea in output.creative_ideas:
++        for selling_point_id in idea.selected_selling_point_ids:
++            _require_existing_id(
++                f"CreativeIdea({idea.idea_id}).selected_selling_point_ids",
++                selling_point_id,
++                selling_point_ids,
++            )
++        for insight_id in idea.source_insight_ids:
++            _require_existing_id(
++                f"CreativeIdea({idea.idea_id}).source_insight_ids",
++                insight_id,
++                insight_ids,
++            )
++
++    script = output.script_draft
++    if script.product_version_id != golden_case.product_profile.product_version_id:
++        raise OutputReferenceError(
++            "ScriptDraft product_version_id must match Golden Case "
++            f"product_version_id={golden_case.product_profile.product_version_id}; "
++            f"got {script.product_version_id}"
++        )
++    _require_existing_id("ScriptDraft.creative_idea_id", script.creative_idea_id, idea_ids)
++    selected_idea = ideas_by_id[script.creative_idea_id]
++    selected_selling_point_ids = set(selected_idea.selected_selling_point_ids)
++    selected_insight_ids = set(selected_idea.source_insight_ids)
++
++    for usage in script.source_usages:
++        _validate_source_usage(usage, fact_ids, selling_point_ids, insight_ids)
++        if (
++            usage.source_type == "reference_insight"
++            and usage.source_id not in selected_insight_ids
++        ):
++            raise OutputReferenceError(
++                "ScriptDraft.source_usages reference_insight must belong to selected "
++                f"CreativeIdea({selected_idea.idea_id}); source_id={usage.source_id}"
++            )
++
++    for scene in script.scenes:
++        for selling_point_id in scene.selling_point_ids:
++            _require_existing_id(
++                f"ScriptScene({scene.scene_id}).selling_point_ids",
++                selling_point_id,
++                selling_point_ids,
++            )
++            if selling_point_id not in selected_selling_point_ids:
++                raise OutputReferenceError(
++                    "ScriptScene selling_point_ids must belong to selected "
++                    f"CreativeIdea({selected_idea.idea_id}); scene_id={scene.scene_id}; "
++                    f"selling_point_id={selling_point_id}"
++                )
++
++        supported_fact_ids = {
++            fact_id
++            for selling_point_id in scene.selling_point_ids
++            for fact_id in selling_points_by_id[selling_point_id].fact_ids
++        }
++        for fact_id in scene.fact_ids:
++            _require_existing_id(
++                f"ScriptScene({scene.scene_id}).fact_ids",
++                fact_id,
++                fact_ids,
++            )
++            if fact_id not in supported_fact_ids:
++                raise OutputReferenceError(
++                    "ScriptScene fact_ids must be supported by its selling_point_ids; "
++                    f"scene_id={scene.scene_id}; fact_id={fact_id}; "
++                    f"selling_point_ids={scene.selling_point_ids}"
++                )
++
++
++def _validate_source_usage(
++    usage: SourceUsage,
++    fact_ids: set[str],
++    selling_point_ids: set[str],
++    insight_ids: set[str],
++) -> None:
++    source_ids_by_type = {
++        "product_fact": fact_ids,
++        "selling_point": selling_point_ids,
++        "reference_insight": insight_ids,
++    }
++    valid_source_ids = source_ids_by_type[usage.source_type]
++    if usage.source_id not in valid_source_ids:
++        raise OutputReferenceError(
++            f"SourceUsage({usage.usage_id}) source_type={usage.source_type} "
++            f"does not match an existing source_id={usage.source_id}"
++        )
++
++
++def _require_existing_id(label: str, value: str, allowed_values: set[str]) -> None:
++    if value not in allowed_values:
++        raise OutputReferenceError(f"{label} references missing id={value}")
+diff --git a/tests/test_output_fixtures.py b/tests/test_output_fixtures.py
+new file mode 100644
+index 0000000..83a0b4e
+--- /dev/null
++++ b/tests/test_output_fixtures.py
+@@ -0,0 +1,436 @@
++import json
++import shutil
++from pathlib import Path
++
++import pytest
++
++from tk_script_agent_lab.domain import (
++    OutputFixtureSet,
++    OutputFixtureFileError,
++    OutputFixtureJsonError,
++    OutputFixturePathError,
++    OutputReferenceError,
++    OutputSchemaError,
++    OutputValidationError,
++    ScriptDraft,
++)
++from tk_script_agent_lab.fixtures import load_output_fixtures
++from tk_script_agent_lab.golden_case import load_golden_case
++
++
++ROOT = Path(__file__).resolve().parents[1]
++GOLDEN_CASE_DIR = ROOT / "data" / "golden_cases" / "car_vacuum_v1"
++FIXTURE_DIR = ROOT / "data" / "fixtures" / "car_vacuum_v1"
++
++
++@pytest.fixture
++def golden_case():
++    return load_golden_case(GOLDEN_CASE_DIR)
++
++
++def copy_fixture(tmp_path: Path) -> Path:
++    fixture_dir = tmp_path / "car_vacuum_v1"
++    shutil.copytree(FIXTURE_DIR, fixture_dir)
++    return fixture_dir
++
++
++def read_json(path: Path):
++    return json.loads(path.read_text(encoding="utf-8"))
++
++
++def write_json(path: Path, value) -> None:
++    path.write_text(json.dumps(value, indent=2), encoding="utf-8")
++
++
++def test_loads_output_fixtures_as_models(golden_case):
++    output = load_output_fixtures(FIXTURE_DIR, golden_case)
++
++    assert isinstance(output, OutputFixtureSet)
++    assert isinstance(output.script_draft, ScriptDraft)
++    assert len(output.reference_insights) == 3
++    assert len(output.creative_ideas) == 3
++    assert len(output.script_draft.source_usages) == 4
++    assert output.script_draft.script_id == "sd_001"
++    assert output.script_draft.creative_idea_id == "ci_001"
++
++
++def test_output_fixture_references_are_valid(golden_case):
++    output = load_output_fixtures(FIXTURE_DIR, golden_case)
++    reference_ids = {video.reference_id for video in golden_case.reference_videos}
++    selling_point_ids = {point.selling_point_id for point in golden_case.selling_points}
++    fact_ids = {fact.fact_id for fact in golden_case.product_facts}
++    insight_ids = {insight.insight_id for insight in output.reference_insights}
++    idea_ids = {idea.idea_id for idea in output.creative_ideas}
++
++    assert {insight.reference_id for insight in output.reference_insights}.issubset(
++        reference_ids
++    )
++    assert {
++        selling_point_id
++        for idea in output.creative_ideas
++        for selling_point_id in idea.selected_selling_point_ids
++    }.issubset(selling_point_ids)
++    assert {
++        insight_id
++        for idea in output.creative_ideas
++        for insight_id in idea.source_insight_ids
++    }.issubset(insight_ids)
++    assert output.script_draft.creative_idea_id in idea_ids
++    assert {
++        fact_id
++        for scene in output.script_draft.scenes
++        for fact_id in scene.fact_ids
++    }.issubset(fact_ids)
++
++
++def test_output_fixture_load_is_deterministic(golden_case):
++    first = load_output_fixtures(FIXTURE_DIR, golden_case)
++    second = load_output_fixtures(FIXTURE_DIR, golden_case)
++
++    assert first.model_dump() == second.model_dump()
++
++
++def test_reference_insight_duplicate_id_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "reference_insights.json"
++    insights = read_json(path)
++    insights[1]["insight_id"] = insights[0]["insight_id"]
++    write_json(path, insights)
++
++    with pytest.raises(OutputValidationError, match="ReferenceInsight.insight_id"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_reference_insight_missing_reference_id_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "reference_insights.json"
++    insights = read_json(path)
++    insights[0]["reference_id"] = "ref_missing"
++    write_json(path, insights)
++
++    with pytest.raises(OutputReferenceError, match="ref_missing"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_reference_insight_empty_summary_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "reference_insights.json"
++    insights = read_json(path)
++    insights[0]["summary"] = " "
++    write_json(path, insights)
++
++    with pytest.raises(OutputSchemaError, match="summary"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_reference_insight_unknown_field_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "reference_insights.json"
++    insights = read_json(path)
++    insights[0]["unknown"] = "not allowed"
++    write_json(path, insights)
++
++    with pytest.raises(OutputSchemaError, match="unknown"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_creative_idea_duplicate_id_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "creative_ideas.json"
++    ideas = read_json(path)
++    ideas[1]["idea_id"] = ideas[0]["idea_id"]
++    write_json(path, ideas)
++
++    with pytest.raises(OutputValidationError, match="CreativeIdea.idea_id"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_creative_idea_missing_selling_point_id_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "creative_ideas.json"
++    ideas = read_json(path)
++    ideas[0]["selected_selling_point_ids"] = ["sp_missing"]
++    write_json(path, ideas)
++
++    with pytest.raises(OutputReferenceError, match="sp_missing"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_creative_idea_missing_insight_id_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "creative_ideas.json"
++    ideas = read_json(path)
++    ideas[0]["source_insight_ids"] = ["ri_missing"]
++    write_json(path, ideas)
++
++    with pytest.raises(OutputReferenceError, match="ri_missing"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_creative_idea_empty_hook_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "creative_ideas.json"
++    ideas = read_json(path)
++    ideas[0]["hook"] = ""
++    write_json(path, ideas)
++
++    with pytest.raises(OutputSchemaError, match="hook"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_creative_idea_empty_selling_points_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "creative_ideas.json"
++    ideas = read_json(path)
++    ideas[0]["selected_selling_point_ids"] = []
++    write_json(path, ideas)
++
++    with pytest.raises(OutputSchemaError, match="selected_selling_point_ids"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_source_usage_duplicate_id_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["source_usages"][1]["usage_id"] = script["source_usages"][0]["usage_id"]
++    write_json(path, script)
++
++    with pytest.raises(OutputValidationError, match="ScriptDraft.source_usages.usage_id"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_source_usage_invalid_source_type_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["source_usages"][0]["source_type"] = "web_page"
++    write_json(path, script)
++
++    with pytest.raises(OutputSchemaError, match="source_type"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_source_usage_type_mismatch_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["source_usages"][0]["source_type"] = "selling_point"
++    script["source_usages"][0]["source_id"] = "pf_001"
++    write_json(path, script)
++
++    with pytest.raises(OutputReferenceError, match="source_type=selling_point"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_source_usage_missing_source_id_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["source_usages"][0]["source_id"] = "pf_missing"
++    write_json(path, script)
++
++    with pytest.raises(OutputReferenceError, match="pf_missing"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_script_product_version_mismatch_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["product_version_id"] = "other_version"
++    write_json(path, script)
++
++    with pytest.raises(OutputReferenceError, match="product_version_id"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_script_missing_creative_idea_id_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["creative_idea_id"] = "ci_missing"
++    write_json(path, script)
++
++    with pytest.raises(OutputReferenceError, match="ci_missing"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_script_duplicate_scene_id_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["scenes"][1]["scene_id"] = script["scenes"][0]["scene_id"]
++    write_json(path, script)
++
++    with pytest.raises(OutputValidationError, match="ScriptScene.scene_id"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_script_scene_duration_must_be_positive(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["scenes"][0]["duration_seconds"] = 0
++    write_json(path, script)
++
++    with pytest.raises(OutputSchemaError, match="duration_seconds"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_script_missing_selling_point_id_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["scenes"][0]["selling_point_ids"] = ["sp_missing"]
++    write_json(path, script)
++
++    with pytest.raises(OutputReferenceError, match="sp_missing"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_script_scene_selling_point_must_belong_to_selected_idea(
++    tmp_path,
++    golden_case,
++):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["scenes"][0]["selling_point_ids"] = ["sp_002"]
++    script["scenes"][0]["fact_ids"] = ["pf_002"]
++    write_json(path, script)
++
++    with pytest.raises(OutputReferenceError) as exc_info:
++        load_output_fixtures(fixture_dir, golden_case)
++
++    message = str(exc_info.value)
++    assert "scene_001" in message
++    assert "ci_001" in message
++    assert "sp_002" in message
++
++
++def test_script_missing_fact_id_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["scenes"][0]["fact_ids"] = ["pf_missing"]
++    write_json(path, script)
++
++    with pytest.raises(OutputReferenceError, match="pf_missing"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_script_scene_fact_must_be_supported_by_scene_selling_points(
++    tmp_path,
++    golden_case,
++):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["creative_idea_id"] = "ci_002"
++    script["source_usages"][3]["source_id"] = "ri_002"
++    script["scenes"][0]["selling_point_ids"] = ["sp_002"]
++    script["scenes"][0]["fact_ids"] = ["pf_001"]
++    write_json(path, script)
++
++    with pytest.raises(OutputReferenceError) as exc_info:
++        load_output_fixtures(fixture_dir, golden_case)
++
++    message = str(exc_info.value)
++    assert "scene_001" in message
++    assert "pf_001" in message
++    assert "sp_002" in message
++
++
++def test_script_reference_insight_usage_must_belong_to_selected_idea(
++    tmp_path,
++    golden_case,
++):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["creative_idea_id"] = "ci_002"
++    script["scenes"][0]["selling_point_ids"] = ["sp_002"]
++    script["scenes"][0]["fact_ids"] = ["pf_002"]
++    script["scenes"][1]["selling_point_ids"] = ["sp_002"]
++    script["scenes"][1]["fact_ids"] = ["pf_002"]
++    script["scenes"][2]["selling_point_ids"] = ["sp_002"]
++    script["scenes"][2]["fact_ids"] = ["pf_002"]
++    write_json(path, script)
++
++    with pytest.raises(OutputReferenceError) as exc_info:
++        load_output_fixtures(fixture_dir, golden_case)
++
++    message = str(exc_info.value)
++    assert "ci_002" in message
++    assert "ri_001" in message
++
++
++def test_script_empty_scenes_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["scenes"] = []
++    write_json(path, script)
++
++    with pytest.raises(OutputSchemaError, match="scenes"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_script_missing_required_field_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    del script["cta"]
++    write_json(path, script)
++
++    with pytest.raises(OutputSchemaError, match="cta"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_script_unknown_field_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    path = fixture_dir / "script_draft.json"
++    script = read_json(path)
++    script["prompt_version"] = "not phase 1b"
++    write_json(path, script)
++
++    with pytest.raises(OutputSchemaError, match="prompt_version"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_fixture_directory_missing_fails(tmp_path, golden_case):
++    with pytest.raises(OutputFixturePathError, match="does not exist"):
++        load_output_fixtures(tmp_path / "missing", golden_case)
++
++
++def test_fixture_path_not_directory_fails(tmp_path, golden_case):
++    file_path = tmp_path / "not_a_dir"
++    file_path.write_text("not a directory", encoding="utf-8")
++
++    with pytest.raises(OutputFixturePathError, match="not a directory"):
++        load_output_fixtures(file_path, golden_case)
++
++
++def test_fixture_missing_file_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    (fixture_dir / "creative_ideas.json").unlink()
++
++    with pytest.raises(OutputFixtureFileError, match="creative_ideas.json"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_fixture_invalid_json_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    (fixture_dir / "script_draft.json").write_text("{invalid", encoding="utf-8")
++
++    with pytest.raises(OutputFixtureJsonError, match="Invalid JSON"):
++        load_output_fixtures(fixture_dir, golden_case)
++
++
++def test_fixture_wrong_json_root_fails(tmp_path, golden_case):
++    fixture_dir = copy_fixture(tmp_path)
++    write_json(fixture_dir / "creative_ideas.json", {})
++
++    with pytest.raises(OutputSchemaError, match="root must be a JSON array"):
++        load_output_fixtures(fixture_dir, golden_case)
+diff --git a/tests/test_output_models.py b/tests/test_output_models.py
+new file mode 100644
+index 0000000..5bf4a5f
+--- /dev/null
++++ b/tests/test_output_models.py
+@@ -0,0 +1,83 @@
++import pytest
++from pydantic import ValidationError
++
++from tk_script_agent_lab.domain import (
++    CreativeIdea,
++    ReferenceInsight,
++    ScriptDraft,
++    SourceUsage,
++)
++
++
++def test_output_models_reject_unknown_fields():
++    with pytest.raises(ValidationError, match="extra"):
++        ReferenceInsight.model_validate(
++            {
++                "insight_id": "ri_extra",
++                "reference_id": "ref_001",
++                "summary": "summary",
++                "reusable_pattern": "pattern",
++                "risk_notes": ["risk"],
++                "unexpected": "not allowed",
++            }
++        )
++
++
++def test_output_models_require_non_empty_text():
++    with pytest.raises(ValidationError, match="hook"):
++        CreativeIdea.model_validate(
++            {
++                "idea_id": "ci_blank",
++                "title": "title",
++                "angle": "angle",
++                "hook": " ",
++                "selected_selling_point_ids": ["sp_001"],
++                "source_insight_ids": ["ri_001"],
++                "risk_notes": ["risk"],
++            }
++        )
++
++
++def test_source_usage_restricts_source_type():
++    with pytest.raises(ValidationError, match="source_type"):
++        SourceUsage.model_validate(
++            {
++                "usage_id": "su_bad",
++                "source_type": "web_page",
++                "source_id": "pf_001",
++                "used_for": "not allowed",
++            }
++        )
++
++
++def test_script_draft_requires_positive_durations():
++    with pytest.raises(ValidationError, match="duration_seconds"):
++        ScriptDraft.model_validate(
++            {
++                "script_id": "sd_bad",
++                "product_version_id": "prod_car_vacuum_001_v1",
++                "creative_idea_id": "ci_001",
++                "language": "en-US",
++                "target_duration_seconds": 24,
++                "hook": "hook",
++                "scenes": [
++                    {
++                        "scene_id": "scene_001",
++                        "duration_seconds": 0,
++                        "visual": "visual",
++                        "voiceover": "voiceover",
++                        "selling_point_ids": ["sp_001"],
++                        "fact_ids": ["pf_001"],
++                    }
++                ],
++                "cta": "cta",
++                "source_usages": [
++                    {
++                        "usage_id": "su_001",
++                        "source_type": "product_fact",
++                        "source_id": "pf_001",
++                        "used_for": "script support",
++                    }
++                ],
++            }
++        )

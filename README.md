@@ -2,6 +2,8 @@
 
 `tk-script-agent-lab` 是一个学习型 TikTok Script Agent Lab。它不是生产级短视频平台，也不是通用 Agent 平台，而是用一个真实业务场景练习 AI 产品经理在 Agentic Engineering 时代的工作方式。
 
+- [System Map](SYSTEM_MAP.md)
+
 ## 项目目标
 
 通过「TikTok 商品短视频创意与剧本生成」这条纵向业务链，完整练习：

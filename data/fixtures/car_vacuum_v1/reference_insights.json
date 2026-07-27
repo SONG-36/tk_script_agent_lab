@@ -1,0 +1,32 @@
+[
+  {
+    "insight_id": "ri_001",
+    "reference_id": "ref_001",
+    "summary": "Learning test fixture: use a close-up messy seat gap as a visual setup, then show a narrow-gap cleanup payoff without claiming guaranteed one-pass performance.",
+    "reusable_pattern": "Start with a tight mess shot, move quickly to the crevice-nozzle demonstration, and keep the result framed as a practical visual example.",
+    "risk_notes": [
+      "Learning fixture only; not a real model analysis result.",
+      "Do not copy the exact reference sequence or claim all debris is always removed."
+    ]
+  },
+  {
+    "insight_id": "ri_002",
+    "reference_id": "ref_002",
+    "summary": "Learning test fixture: use a time-pressure car reset story before a passenger arrives, focused on quick visible cleanup.",
+    "reusable_pattern": "Frame the need as a short driver POV reset and keep the story about visible crumbs or dust inside the car.",
+    "risk_notes": [
+      "Learning fixture only; not a real model analysis result.",
+      "Do not reuse the same character setup or imply unlimited runtime."
+    ]
+  },
+  {
+    "insight_id": "ri_003",
+    "reference_id": "ref_003",
+    "summary": "Learning test fixture: borrow the satisfying macro-cleaning rhythm for dry dust and crumbs without making performance guarantees.",
+    "reusable_pattern": "Use close shots and sound-focused cleaning moments as presentation style, not as product proof.",
+    "risk_notes": [
+      "Learning fixture only; not a real model analysis result.",
+      "Keep satisfaction as a visual style, not a factual claim."
+    ]
+  }
+]
