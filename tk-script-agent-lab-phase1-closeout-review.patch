@@ -1,0 +1,672 @@
+diff --git a/FILE_MANIFEST.txt b/FILE_MANIFEST.txt
+index b46917e..7a8c876 100644
+--- a/FILE_MANIFEST.txt
++++ b/FILE_MANIFEST.txt
+@@ -10,6 +10,7 @@ FAILURE_TAXONOMY.md
+ GOLDEN_CASE_GUIDE.md
+ LEARNING_ROADMAP.md
+ OLD_PROJECT_FREEZE_NOTE.md
++PHASE_1_REVIEW.md
+ PHASE_EXIT_CHECKLIST.md
+ PROJECT_BOOTSTRAP_CHECKLIST.md
+ README.md
+@@ -42,6 +43,8 @@ src/tk_script_agent_lab/domain/__init__.py
+ src/tk_script_agent_lab/domain/errors.py
+ src/tk_script_agent_lab/domain/models.py
+ src/tk_script_agent_lab/domain/validators.py
++src/tk_script_agent_lab/exporting/__init__.py
++src/tk_script_agent_lab/exporting/json_exporter.py
+ src/tk_script_agent_lab/fixtures/__init__.py
+ src/tk_script_agent_lab/fixtures/loader.py
+ src/tk_script_agent_lab/golden_case/__init__.py
+@@ -59,4 +62,6 @@ tests/test_deterministic_pipeline.py
+ tests/test_fake_providers.py
+ tests/test_output_fixtures.py
+ tests/test_output_models.py
++tests/test_phase1_e2e.py
++tests/test_phase1_export.py
+ tests/test_provider_protocols.py
+diff --git a/SYSTEM_MAP.md b/SYSTEM_MAP.md
+index ab9df1a..b790b29 100644
+--- a/SYSTEM_MAP.md
++++ b/SYSTEM_MAP.md
+@@ -18,13 +18,8 @@
+ - Phase 0：实验项目基线；
+ - Phase 1A：输入业务模型与 Golden Case 校验；
+ - Phase 1B：固定输出模型、fixture 与跨对象引用校验；
+-- Phase 1C：Provider 契约、Fake Provider、人工创意选择和确定性 pipeline。
+-
+-Phase 1 主体能力已经建立，但按照 `LEARNING_ROADMAP.md`，仍需完成：
+-
+-- 最小导出；
+-- Golden Case 完整端到端测试；
+-- Phase 1 总复盘。
++- Phase 1C：Provider 契约、Fake Provider、人工创意选择和确定性 pipeline；
++- Phase 1 Closeout：最小 JSON 导出、Golden Case 完整 E2E 和阶段复盘。
+ 
+ ---
+ 
+@@ -45,8 +40,9 @@ Phase 1 主体能力已经建立，但按照 `LEARNING_ROADMAP.md`，仍需完
+ | pytest 自动测试 | 数据库 |
+ | 正常路径人工验证 | 完整 Run Trace |
+ | Fake Provider 无网络运行 | Eval 系统 |
+-| | 最小导出 |
+-| | Phase 1 Golden Case 完整 E2E |
++| 最小 Phase 1 JSON 导出 | |
++| Phase 1 Golden Case 完整 E2E | |
++| 导出结果重新读取验证 | |
+ 
+ 当前没有模型节点。
+ 
+@@ -94,10 +90,13 @@ flowchart LR
+         V3[跨对象业务校验]
+     end
+ 
+-    subgraph Outputs[当前输出对象]
++    subgraph Outputs[当前输出]
+         O1[ReferenceInsight 列表]
+         O2[CreativeIdea 列表]
+         O3[ScriptDraft]
++        O4[export_phase1_result]
++        O5[phase1_result.json]
++        O6[重新读取验证]
+     end
+ 
+     A --> C --> V1 --> D
+@@ -130,6 +129,11 @@ flowchart LR
+     D --> P4
+ 
+     P4 --> V2 --> V3 --> O3
++    O3 --> O4
++    P2 --> O4
++    D --> O4
++    H --> O4
++    O4 --> V2 --> V3 --> O5 --> O6
+ ```
+ 
+ 当前转换链：
+@@ -144,6 +148,9 @@ JSON
+ → 完整 Schema 重校验
+ → 跨对象业务校验
+ → CreativeOptions / ScriptDraft
++→ 稳定 JSON 导出
++→ phase1_result.json
++→ 重新读取验证
+ ```
+ 
+ ---
+@@ -159,6 +166,7 @@ JSON
+ | `providers/protocols.py` | 定义三个业务 Provider 的能力契约 | 不定义通用 LLM 平台 |
+ | `providers/fake.py` | 返回 fixture 中对象的 deep copy | 不调用网络，不做规则生成 |
+ | `pipeline/deterministic.py` | 控制调用顺序、人工选择、错误边界和返回结果 | 不自动选择最佳创意 |
++| `exporting/json_exporter.py` | 写入稳定的 Phase 1 JSON 结果 | 不建立通用 Artifact 框架 |
+ | `tests/` | 验证正常路径、错误注入、可重复性和边界行为 | 不证明业务内容优秀 |
+ 
+ ---
+@@ -280,6 +288,8 @@ SourceUsage(reference_insight).source_id
+ | SourceUsage fact 必须实际出现在 Scene | shared validator | `ProviderOutputError` | 防止虚假来源声明 | `test_generate_script_rejects_source_usage_fact_not_used_in_scenes` |
+ | SourceUsage selling point 必须实际出现在 Scene | shared validator | `ProviderOutputError` | 防止虚假来源声明 | `test_generate_script_rejects_source_usage_selling_point_not_used_in_scenes` |
+ | Provider 返回对象必须重新执行完整 Schema | `_revalidate_model()` | `OutputSchemaError` → `ProviderOutputError` | `model_copy(update=...)` 可绕过字段校验 | Phase 1C v2 新增四项测试 |
++| 导出前必须重新执行 shared validators | `export_phase1_result()` | `OutputValidationError` 子类 | 防止未校验对象落盘 | `test_export_phase1_result_rejects_mismatched_selection_before_write` |
++| 相同输入导出必须字节一致 | `export_phase1_result()` | 测试失败 | Phase 1 产物必须可审计和可重复 | `test_export_phase1_result_is_byte_deterministic` |
+ | Placeholder 不能进入 production-ready | `GoldenCase.require_production_ready()` | Golden Case 校验错误 | 学习数据不能假装生产数据 | Golden Case production-ready 测试 |
+ 
+ ---
+@@ -340,6 +350,23 @@ prepare_creative_options(
+ → 返回 ScriptDraft
+ ```
+ 
++### 8.5 Phase 1 导出
++
++```text
++export_phase1_result(
++    output_directory,
++    golden_case,
++    options,
++    selected_idea_id,
++    script
++)
++→ 调用 validate_reference_insights
++→ 调用 validate_creative_ideas
++→ 调用 validate_script_draft(selected_idea_id=selected_idea_id)
++→ 写入 output_directory / "phase1_result.json"
++→ 返回导出文件路径
++```
++
+ ---
+ 
+ ## 9. 人工闸门
+@@ -463,6 +490,7 @@ JSON
+ → ScriptDraft
+ → Schema 重校验
+ → 跨对象业务校验
++→ phase1_result.json
+ ```
+ 
+ ### 3. 哪一步由模型完成
+@@ -489,6 +517,7 @@ Fake Provider 只占据未来模型的位置，并返回固定 fixture。
+ - 人工选择 ID；
+ - production-ready 闸门；
+ - Provider 输出重新校验。
++- 稳定 JSON 导出。
+ 
+ ### 5. 系统可能在哪里说谎
+ 
+@@ -517,6 +546,8 @@ Fake Provider 只占据未来模型的位置，并返回固定 fixture。
+ - 非法 Provider 输出会重新执行 Schema 校验；
+ - Scene、fact、selling point 和 SourceUsage 关系会被确定性检查；
+ - 相同输入重复运行结果一致；
++- 相同输入导出字节一致；
++- Golden Case 完整 E2E 可以导出并重新读取；
+ - Fake Provider 不使用网络、随机数、时间和 API Key；
+ - pytest 全部通过；
+ - 正常和错误路径经过人工验证。
+@@ -545,38 +576,26 @@ Fake Provider 只占据未来模型的位置，并返回固定 fixture。
+ | 无网络和无随机测试 | TikTok 业务效果 |
+ | 人工选择错误测试 | 人工选择是否正确 |
+ | 相同输入结果一致 | 真实生成结果可重复性 |
+-| 87 项自动测试通过 | 所有未知边界情况 |
+-| Phase 1C 手工验证通过 | Phase 1 完整导出闭环 |
++| 字节级确定性导出 | 所有未知边界情况 |
++| Golden Case 完整 E2E | 真实 LLM 端到端稳定性 |
++| 导出结果重新读取 | 生产级多案例稳定性 |
++| 91 项自动测试通过 | |
++| Phase 1 Closeout 手工验证通过 | |
+ 
+ ---
+ 
+ ## 13. Phase 1 当前状态
+ 
+ ```text
+-Phase 1A
+-输入业务模型与 Golden Case
+-已完成
+-
+-Phase 1B
+-固定输出模型、fixture 和跨对象引用
+-已完成
+-
+-Phase 1C
+-Provider Protocol、Fake Provider、人工选择和确定性 pipeline
+-已完成并通过 Review
+-
+-Phase 1 Closeout
+-最小导出
+-尚未完成
+-
+-Golden Case 完整端到端测试
+-尚未完成
+-
+-Phase 1 总复盘
+-尚未完成
++Phase 1A：完成
++Phase 1B：完成
++Phase 1C：完成
++Phase 1 Closeout：完成
++Phase 1：正式完成
++Phase 2：尚未开始
+ ```
+ 
+-当前不要进入真实 LLM，直到 Phase 1 Closeout 完成。
++当前不要进入真实 LLM，直到 Phase 2 任务合同明确要求。
+ 
+ ---
+ 
+@@ -594,4 +613,4 @@ Phase 1 总复盘
+ 6. 六问必须根据实际代码重新回答；
+ 7. 删除已经失效的描述；
+ 8. 历史版本由 Git 保存，本文不维护手工变更日志；
+-9. 本文始终保持为当前系统地图，不扩展成大型文档体系。
+\ No newline at end of file
++9. 本文始终保持为当前系统地图，不扩展成大型文档体系。
+diff --git a/PHASE_1_REVIEW.md b/PHASE_1_REVIEW.md
+new file mode 100644
+index 0000000..bb3dc49
+--- /dev/null
++++ b/PHASE_1_REVIEW.md
+@@ -0,0 +1,161 @@
++# Phase 1 Review
++
++## 1. 阶段目标
++
++Phase 1 的目标是建立一个没有真实 LLM 的最小可审计闭环：从固定 Golden Case 读取商品、事实、卖点和参考视频，通过固定 output fixture 与 Fake Provider 走完整 Provider 契约，保留人工创意选择，并用确定性代码验证和导出结果。
++
++这个阶段不是证明模型质量，而是证明业务对象、边界、校验和测试方法已经足够清晰，后续接入真实模型时不会绕过人工闸门或 Schema 校验。
++
++## 2. 已完成能力
++
++- Golden Case JSON 加载为 Pydantic 领域对象。
++- 商品版本、ID 唯一性和基础引用关系由确定性代码校验。
++- 固定 ReferenceInsight、CreativeIdea 和 ScriptDraft fixture 可以加载并校验。
++- Provider Protocol 已定义，pipeline 依赖协议而不是具体 Fake 类。
++- Fake Provider 返回 fixture deep copy，不使用网络、随机数、时间或 API Key。
++- 人工 `selected_idea_id` 必须显式传入，系统不会自动选择创意。
++- ScriptDraft 必须匹配人工选择、所选创意、Scene 卖点、fact 支持关系和 SourceUsage。
++- Phase 1 结果可以稳定导出为 `phase1_result.json`。
++
++## 3. 当前完整数据流
++
++```text
++Golden Case JSON
++→ load_golden_case
++→ GoldenCase
++→ Output Fixture JSON
++→ load_output_fixtures
++→ OutputFixtureSet
++→ Fake Provider
++→ Provider Protocol
++→ prepare_creative_options
++→ CreativeOptions
++→ 人工 selected_idea_id
++→ generate_selected_script
++→ ScriptDraft
++→ export_phase1_result
++→ Schema 重校验
++→ 跨对象校验
++→ phase1_result.json
++→ 重新读取验证
++```
++
++## 4. AI 产品经理六问
++
++### 4.1 数据从哪里进来
++
++当前数据只来自三处：
++
++- Golden Case JSON；
++- 固定 Output Fixture JSON；
++- 人工 `selected_idea_id`。
++
++Golden Case 提供商品资料、商品事实、卖点和参考视频。固定 Output Fixture 提供 ReferenceInsight、CreativeIdea 和 ScriptDraft。人工选择决定哪条 CreativeIdea 进入剧本生成。
++
++### 4.2 中间经过哪些转换
++
++```text
++JSON
++→ Pydantic 模型
++→ GoldenCase / OutputFixtureSet
++→ Fake Provider
++→ Provider Protocol
++→ CreativeOptions
++→ 人工选择
++→ ScriptDraft
++→ Schema 重校验
++→ 跨对象校验
++→ phase1_result.json
++```
++
++每一步都保留明确对象边界。fixture 不是直接写入导出文件，而是经过 Provider 契约、pipeline 和 shared validators。
++
++### 4.3 哪一步由模型完成
++
++Phase 1 没有真实 LLM。
++
++Fake Provider 不是模型生成，也不模拟智能能力。它只在未来模型节点的位置返回固定 fixture，用于验证接口、校验和调用链。
++
++### 4.4 哪一步必须由确定性代码完成
++
++以下职责必须由代码完成：
++
++- Schema；
++- ID 唯一；
++- 引用存在；
++- 商品版本；
++- 人工选择；
++- Scene 卖点边界；
++- fact 支持关系；
++- SourceUsage；
++- Provider 输出重校验；
++- 稳定 JSON 导出。
++
++这些规则不能交给模型自行判断，因为它们是合同、引用和安全边界，不是文案生成问题。
++
++### 4.5 系统可能在哪里说谎
++
++当前系统仍可能在这些位置说谎：
++
++- 商品事实可能不真实；
++- ReferenceInsight 文字可能不忠实；
++- 合法 CreativeIdea 不代表创意优秀；
++- 合法 ScriptDraft 不代表 TikTok 转化好；
++- SourceUsage 合法不代表自由文本完全忠实；
++- fixture 结果不代表真实模型能力；
++- Golden Case 成功不代表生产数据全部成功。
++
++Phase 1 的测试只能证明结构、引用和调用链，不证明内容事实和商业效果。
++
++### 4.6 如何证明它做对了
++
++当前证据来自自动测试、Golden Case E2E 和人工运行：
++
++- 无 LLM 确定性闭环；
++- Provider 可替换；
++- 人工选择不能被绕过；
++- 非法输出被拒绝；
++- 相同输入导出一致；
++- Golden Case E2E 可落盘并重新读取。
++
++这些证据覆盖了 Phase 1 的工程合同，但不覆盖真实模型质量。
++
++## 5. 当前已证明
++
++- Golden Case 和 output fixture 能加载为明确 Schema。
++- shared validators 能拒绝重复 ID、缺失引用、版本错配和 Schema 漂移。
++- Fake Provider 可通过协议接入 pipeline。
++- 人工选择是显式输入，剧本不能绕过所选 CreativeIdea。
++- ScriptScene 的 selling point 和 fact 引用受到所选创意与卖点支持关系限制。
++- SourceUsage 必须对应实际可引用来源。
++- `phase1_result.json` 对相同输入字节级一致。
++- 当前完整闭环不需要网络、API Key、随机数、当前时间或真实 LLM。
++
++## 6. 当前尚未证明
++
++- 商品真实性；
++- 真实 LLM 质量；
++- Prompt 效果；
++- Token 和成本；
++- 模型失败恢复；
++- TikTok 业务效果；
++- 生产级多案例稳定性。
++
++这些能力属于后续阶段，不能从 Phase 1 closeout 的成功中推导出来。
++
++## 7. Phase 1 结论
++
++Phase 1 已证明：在没有真实 LLM 的情况下，商品资料、固定参考洞察、固定创意候选、人工创意选择、固定剧本、确定性校验和 JSON 导出可以形成一个可测试、可重复、可审计的最小闭环。
++
++Phase 1 没有证明：真实模型可以稳定地产生高质量洞察、创意和剧本。
++
++## 8. 进入 Phase 2 前的边界
++
++进入 Phase 2 前仍需保持以下边界：
++
++- 不让模型决定商品事实是否真实；
++- 不让模型自动选择最终创意；
++- 不让模型批准剧本；
++- 不让模型绕过 Pydantic 或 shared validators；
++- 不把 Prompt、Token、成本、Trace、RAG 或 LangGraph 伪装成当前已实现能力；
++- 接入真实模型前必须保留 Fake Provider 测试作为回归基线。
+diff --git a/src/tk_script_agent_lab/exporting/__init__.py b/src/tk_script_agent_lab/exporting/__init__.py
+new file mode 100644
+index 0000000..a01c975
+--- /dev/null
++++ b/src/tk_script_agent_lab/exporting/__init__.py
+@@ -0,0 +1,3 @@
++from tk_script_agent_lab.exporting.json_exporter import export_phase1_result
++
++__all__ = ["export_phase1_result"]
+diff --git a/src/tk_script_agent_lab/exporting/json_exporter.py b/src/tk_script_agent_lab/exporting/json_exporter.py
+new file mode 100644
+index 0000000..c95bbae
+--- /dev/null
++++ b/src/tk_script_agent_lab/exporting/json_exporter.py
+@@ -0,0 +1,62 @@
++import json
++from pathlib import Path
++
++from tk_script_agent_lab.domain.models import GoldenCase, ScriptDraft
++from tk_script_agent_lab.domain.validators import (
++    validate_creative_ideas,
++    validate_reference_insights,
++    validate_script_draft,
++)
++from tk_script_agent_lab.pipeline import CreativeOptions
++
++
++def export_phase1_result(
++    *,
++    output_directory: Path,
++    golden_case: GoldenCase,
++    options: CreativeOptions,
++    selected_idea_id: str,
++    script: ScriptDraft,
++) -> Path:
++    validate_reference_insights(golden_case, options.reference_insights)
++    validate_creative_ideas(
++        golden_case,
++        options.reference_insights,
++        options.creative_ideas,
++    )
++    validate_script_draft(
++        golden_case,
++        options.reference_insights,
++        options.creative_ideas,
++        script,
++        selected_idea_id=selected_idea_id,
++    )
++
++    payload = {
++        "schema_version": "phase1_result_v1",
++        "product_version_id": golden_case.product_profile.product_version_id,
++        "selected_idea_id": selected_idea_id,
++        "reference_insights": [
++            item.model_dump(mode="json")
++            for item in options.reference_insights
++        ],
++        "creative_ideas": [
++            item.model_dump(mode="json")
++            for item in options.creative_ideas
++        ],
++        "script_draft": script.model_dump(mode="json"),
++    }
++
++    output_path = Path(output_directory) / "phase1_result.json"
++    output_path.parent.mkdir(parents=True, exist_ok=True)
++    output_path.write_text(
++        json.dumps(
++            payload,
++            ensure_ascii=False,
++            indent=2,
++            sort_keys=True,
++        )
++        + "\n",
++        encoding="utf-8",
++    )
++    return output_path
+diff --git a/tests/test_phase1_e2e.py b/tests/test_phase1_e2e.py
+new file mode 100644
+index 0000000..07d0ec4
+--- /dev/null
++++ b/tests/test_phase1_e2e.py
+@@ -0,0 +1,89 @@
++import json
++import random
++import socket
++import time
++from pathlib import Path
++
++from tk_script_agent_lab.exporting import export_phase1_result
++from tk_script_agent_lab.fixtures import load_output_fixtures
++from tk_script_agent_lab.golden_case import load_golden_case
++from tk_script_agent_lab.pipeline import generate_selected_script, prepare_creative_options
++from tk_script_agent_lab.providers import (
++    FakeCreativeIdeaProvider,
++    FakeReferenceInsightProvider,
++    FakeScriptDraftProvider,
++)
++
++
++ROOT = Path(__file__).resolve().parents[1]
++GOLDEN_CASE_DIR = ROOT / "data" / "golden_cases" / "car_vacuum_v1"
++FIXTURE_DIR = ROOT / "data" / "fixtures" / "car_vacuum_v1"
++
++
++def test_phase1_golden_case_end_to_end(tmp_path, monkeypatch):
++    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
++
++    def fail(*args, **kwargs):
++        raise AssertionError("external boundary should not be used")
++
++    monkeypatch.setattr(socket, "socket", fail)
++    monkeypatch.setattr(random, "random", fail)
++    monkeypatch.setattr(time, "time", fail)
++
++    golden_case = load_golden_case(GOLDEN_CASE_DIR)
++    fixtures = load_output_fixtures(FIXTURE_DIR, golden_case)
++    options = prepare_creative_options(
++        golden_case,
++        FakeReferenceInsightProvider(fixtures),
++        FakeCreativeIdeaProvider(fixtures),
++    )
++    selected_idea_id = "ci_001"
++    script = generate_selected_script(
++        golden_case,
++        options,
++        selected_idea_id,
++        FakeScriptDraftProvider(fixtures),
++    )
++    export_path = export_phase1_result(
++        output_directory=tmp_path,
++        golden_case=golden_case,
++        options=options,
++        selected_idea_id=selected_idea_id,
++        script=script,
++    )
++    payload = json.loads(export_path.read_text(encoding="utf-8"))
++
++    assert golden_case.product_profile.product_version_id == "prod_car_vacuum_001_v1"
++    assert len(golden_case.product_facts) == 4
++    assert len(golden_case.selling_points) == 3
++    assert len(golden_case.reference_videos) == 3
++    assert len(options.reference_insights) == 3
++    assert len(options.creative_ideas) == 3
++    assert selected_idea_id == "ci_001"
++    assert script.script_id == "sd_001"
++    assert script.creative_idea_id == "ci_001"
++    assert len(script.scenes) == 3
++    assert len(script.source_usages) == 4
++
++    selected_idea = next(
++        idea for idea in options.creative_ideas if idea.idea_id == selected_idea_id
++    )
++    selected_selling_point_ids = set(selected_idea.selected_selling_point_ids)
++    selling_points_by_id = {
++        point.selling_point_id: point for point in golden_case.selling_points
++    }
++    for scene in script.scenes:
++        assert set(scene.selling_point_ids).issubset(selected_selling_point_ids)
++        supported_fact_ids = {
++            fact_id
++            for selling_point_id in scene.selling_point_ids
++            for fact_id in selling_points_by_id[selling_point_id].fact_ids
++        }
++        assert set(scene.fact_ids).issubset(supported_fact_ids)
++
++    assert export_path.exists()
++    assert payload["product_version_id"] == golden_case.product_profile.product_version_id
++    assert payload["selected_idea_id"] == selected_idea_id
++    assert payload["script_draft"]["script_id"] == script.script_id
++    assert payload["script_draft"]["creative_idea_id"] == script.creative_idea_id
++    assert payload["script_draft"] == script.model_dump(mode="json")
+diff --git a/tests/test_phase1_export.py b/tests/test_phase1_export.py
+new file mode 100644
+index 0000000..a67b49f
+--- /dev/null
++++ b/tests/test_phase1_export.py
+@@ -0,0 +1,106 @@
++import json
++from pathlib import Path
++
++import pytest
++
++from tk_script_agent_lab.domain import OutputReferenceError
++from tk_script_agent_lab.exporting import export_phase1_result
++from tk_script_agent_lab.fixtures import load_output_fixtures
++from tk_script_agent_lab.golden_case import load_golden_case
++from tk_script_agent_lab.pipeline import generate_selected_script, prepare_creative_options
++from tk_script_agent_lab.providers import (
++    FakeCreativeIdeaProvider,
++    FakeReferenceInsightProvider,
++    FakeScriptDraftProvider,
++)
++
++
++ROOT = Path(__file__).resolve().parents[1]
++GOLDEN_CASE_DIR = ROOT / "data" / "golden_cases" / "car_vacuum_v1"
++FIXTURE_DIR = ROOT / "data" / "fixtures" / "car_vacuum_v1"
++
++
++@pytest.fixture
++def phase1_result_inputs():
++    golden_case = load_golden_case(GOLDEN_CASE_DIR)
++    fixtures = load_output_fixtures(FIXTURE_DIR, golden_case)
++    options = prepare_creative_options(
++        golden_case,
++        FakeReferenceInsightProvider(fixtures),
++        FakeCreativeIdeaProvider(fixtures),
++    )
++    selected_idea_id = "ci_001"
++    script = generate_selected_script(
++        golden_case,
++        options,
++        selected_idea_id,
++        FakeScriptDraftProvider(fixtures),
++    )
++    return golden_case, options, selected_idea_id, script
++
++
++def test_export_phase1_result_writes_valid_json(tmp_path, phase1_result_inputs):
++    golden_case, options, selected_idea_id, script = phase1_result_inputs
++
++    export_path = export_phase1_result(
++        output_directory=tmp_path,
++        golden_case=golden_case,
++        options=options,
++        selected_idea_id=selected_idea_id,
++        script=script,
++    )
++
++    assert export_path.exists()
++    assert export_path.name == "phase1_result.json"
++    payload = json.loads(export_path.read_text(encoding="utf-8"))
++    assert payload["schema_version"] == "phase1_result_v1"
++    assert payload["product_version_id"] == "prod_car_vacuum_001_v1"
++    assert payload["selected_idea_id"] == "ci_001"
++    assert payload["script_draft"]["script_id"] == "sd_001"
++    assert payload["script_draft"]["creative_idea_id"] == "ci_001"
++    assert len(payload["reference_insights"]) == 3
++    assert len(payload["creative_ideas"]) == 3
++    assert len(payload["script_draft"]["scenes"]) == 3
++
++
++def test_export_phase1_result_is_byte_deterministic(
++    tmp_path,
++    phase1_result_inputs,
++):
++    golden_case, options, selected_idea_id, script = phase1_result_inputs
++
++    first_path = export_phase1_result(
++        output_directory=tmp_path / "first",
++        golden_case=golden_case,
++        options=options,
++        selected_idea_id=selected_idea_id,
++        script=script,
++    )
++    second_path = export_phase1_result(
++        output_directory=tmp_path / "second",
++        golden_case=golden_case,
++        options=options,
++        selected_idea_id=selected_idea_id,
++        script=script,
++    )
++
++    assert first_path.read_bytes() == second_path.read_bytes()
++
++
++def test_export_phase1_result_rejects_mismatched_selection_before_write(
++    tmp_path,
++    phase1_result_inputs,
++):
++    golden_case, options, selected_idea_id, script = phase1_result_inputs
++    assert selected_idea_id == "ci_001"
++
++    with pytest.raises(OutputReferenceError, match="selected_idea_id=ci_002"):
++        export_phase1_result(
++            output_directory=tmp_path,
++            golden_case=golden_case,
++            options=options,
++            selected_idea_id="ci_002",
++            script=script,
++        )
++
++    assert not (tmp_path / "phase1_result.json").exists()

@@ -18,13 +18,8 @@
 - Phase 0：实验项目基线；
 - Phase 1A：输入业务模型与 Golden Case 校验；
 - Phase 1B：固定输出模型、fixture 与跨对象引用校验；
-- Phase 1C：Provider 契约、Fake Provider、人工创意选择和确定性 pipeline。
-
-Phase 1 主体能力已经建立，但按照 `LEARNING_ROADMAP.md`，仍需完成：
-
-- 最小导出；
-- Golden Case 完整端到端测试；
-- Phase 1 总复盘。
+- Phase 1C：Provider 契约、Fake Provider、人工创意选择和确定性 pipeline；
+- Phase 1 Closeout：最小 JSON 导出、Golden Case 完整 E2E 和阶段复盘。
 
 ---
 
@@ -45,8 +40,9 @@ Phase 1 主体能力已经建立，但按照 `LEARNING_ROADMAP.md`，仍需完�
 | pytest 自动测试 | 数据库 |
 | 正常路径人工验证 | 完整 Run Trace |
 | Fake Provider 无网络运行 | Eval 系统 |
-| | 最小导出 |
-| | Phase 1 Golden Case 完整 E2E |
+| 最小 Phase 1 JSON 导出 | |
+| Phase 1 Golden Case 完整 E2E | |
+| 导出结果重新读取验证 | |
 
 当前没有模型节点。
 
@@ -94,10 +90,13 @@ flowchart LR
         V3[跨对象业务校验]
     end
 
-    subgraph Outputs[当前输出对象]
+    subgraph Outputs[当前输出]
         O1[ReferenceInsight 列表]
         O2[CreativeIdea 列表]
         O3[ScriptDraft]
+        O4[export_phase1_result]
+        O5[phase1_result.json]
+        O6[重新读取验证]
     end
 
     A --> C --> V1 --> D
@@ -130,6 +129,11 @@ flowchart LR
     D --> P4
 
     P4 --> V2 --> V3 --> O3
+    O3 --> O4
+    P2 --> O4
+    D --> O4
+    H --> O4
+    O4 --> V2 --> V3 --> O5 --> O6
 ```
 
 当前转换链：
@@ -144,6 +148,9 @@ JSON
 → 完整 Schema 重校验
 → 跨对象业务校验
 → CreativeOptions / ScriptDraft
+→ 稳定 JSON 导出
+→ phase1_result.json
+→ 重新读取验证
 ```
 
 ---
@@ -159,6 +166,7 @@ JSON
 | `providers/protocols.py` | 定义三个业务 Provider 的能力契约 | 不定义通用 LLM 平台 |
 | `providers/fake.py` | 返回 fixture 中对象的 deep copy | 不调用网络，不做规则生成 |
 | `pipeline/deterministic.py` | 控制调用顺序、人工选择、错误边界和返回结果 | 不自动选择最佳创意 |
+| `exporting/json_exporter.py` | 写入稳定的 Phase 1 JSON 结果 | 不建立通用 Artifact 框架 |
 | `tests/` | 验证正常路径、错误注入、可重复性和边界行为 | 不证明业务内容优秀 |
 
 ---
@@ -280,6 +288,8 @@ SourceUsage(reference_insight).source_id
 | SourceUsage fact 必须实际出现在 Scene | shared validator | `ProviderOutputError` | 防止虚假来源声明 | `test_generate_script_rejects_source_usage_fact_not_used_in_scenes` |
 | SourceUsage selling point 必须实际出现在 Scene | shared validator | `ProviderOutputError` | 防止虚假来源声明 | `test_generate_script_rejects_source_usage_selling_point_not_used_in_scenes` |
 | Provider 返回对象必须重新执行完整 Schema | `_revalidate_model()` | `OutputSchemaError` → `ProviderOutputError` | `model_copy(update=...)` 可绕过字段校验 | Phase 1C v2 新增四项测试 |
+| 导出前必须重新执行 shared validators | `export_phase1_result()` | `OutputValidationError` 子类 | 防止未校验对象落盘 | `test_export_phase1_result_rejects_mismatched_selection_before_write` |
+| 相同输入导出必须字节一致 | `export_phase1_result()` | 测试失败 | Phase 1 产物必须可审计和可重复 | `test_export_phase1_result_is_byte_deterministic` |
 | Placeholder 不能进入 production-ready | `GoldenCase.require_production_ready()` | Golden Case 校验错误 | 学习数据不能假装生产数据 | Golden Case production-ready 测试 |
 
 ---
@@ -338,6 +348,23 @@ prepare_creative_options(
 → 重新执行完整 ScriptDraft Schema
 → 校验人工选择、版本、Scene、fact、SourceUsage
 → 返回 ScriptDraft
+```
+
+### 8.5 Phase 1 导出
+
+```text
+export_phase1_result(
+    output_directory,
+    golden_case,
+    options,
+    selected_idea_id,
+    script
+)
+→ 调用 validate_reference_insights
+→ 调用 validate_creative_ideas
+→ 调用 validate_script_draft(selected_idea_id=selected_idea_id)
+→ 写入 output_directory / "phase1_result.json"
+→ 返回导出文件路径
 ```
 
 ---
@@ -463,6 +490,7 @@ JSON
 → ScriptDraft
 → Schema 重校验
 → 跨对象业务校验
+→ phase1_result.json
 ```
 
 ### 3. 哪一步由模型完成
@@ -489,6 +517,7 @@ Fake Provider 只占据未来模型的位置，并返回固定 fixture。
 - 人工选择 ID；
 - production-ready 闸门；
 - Provider 输出重新校验。
+- 稳定 JSON 导出。
 
 ### 5. 系统可能在哪里说谎
 
@@ -517,6 +546,8 @@ Fake Provider 只占据未来模型的位置，并返回固定 fixture。
 - 非法 Provider 输出会重新执行 Schema 校验；
 - Scene、fact、selling point 和 SourceUsage 关系会被确定性检查；
 - 相同输入重复运行结果一致；
+- 相同输入导出字节一致；
+- Golden Case 完整 E2E 可以导出并重新读取；
 - Fake Provider 不使用网络、随机数、时间和 API Key；
 - pytest 全部通过；
 - 正常和错误路径经过人工验证。
@@ -545,38 +576,26 @@ Fake Provider 只占据未来模型的位置，并返回固定 fixture。
 | 无网络和无随机测试 | TikTok 业务效果 |
 | 人工选择错误测试 | 人工选择是否正确 |
 | 相同输入结果一致 | 真实生成结果可重复性 |
-| 87 项自动测试通过 | 所有未知边界情况 |
-| Phase 1C 手工验证通过 | Phase 1 完整导出闭环 |
+| 字节级确定性导出 | 所有未知边界情况 |
+| Golden Case 完整 E2E | 真实 LLM 端到端稳定性 |
+| 导出结果重新读取 | 生产级多案例稳定性 |
+| 91 项自动测试通过 | |
+| Phase 1 Closeout 手工验证通过 | |
 
 ---
 
 ## 13. Phase 1 当前状态
 
 ```text
-Phase 1A
-输入业务模型与 Golden Case
-已完成
-
-Phase 1B
-固定输出模型、fixture 和跨对象引用
-已完成
-
-Phase 1C
-Provider Protocol、Fake Provider、人工选择和确定性 pipeline
-已完成并通过 Review
-
-Phase 1 Closeout
-最小导出
-尚未完成
-
-Golden Case 完整端到端测试
-尚未完成
-
-Phase 1 总复盘
-尚未完成
+Phase 1A：完成
+Phase 1B：完成
+Phase 1C：完成
+Phase 1 Closeout：完成
+Phase 1：正式完成
+Phase 2：尚未开始
 ```
 
-当前不要进入真实 LLM，直到 Phase 1 Closeout 完成。
+当前不要进入真实 LLM，直到 Phase 2 任务合同明确要求。
 
 ---
 

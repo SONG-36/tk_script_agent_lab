@@ -10,6 +10,7 @@ FAILURE_TAXONOMY.md
 GOLDEN_CASE_GUIDE.md
 LEARNING_ROADMAP.md
 OLD_PROJECT_FREEZE_NOTE.md
+PHASE_1_REVIEW.md
 PHASE_EXIT_CHECKLIST.md
 PROJECT_BOOTSTRAP_CHECKLIST.md
 README.md
@@ -42,6 +43,8 @@ src/tk_script_agent_lab/domain/__init__.py
 src/tk_script_agent_lab/domain/errors.py
 src/tk_script_agent_lab/domain/models.py
 src/tk_script_agent_lab/domain/validators.py
+src/tk_script_agent_lab/exporting/__init__.py
+src/tk_script_agent_lab/exporting/json_exporter.py
 src/tk_script_agent_lab/fixtures/__init__.py
 src/tk_script_agent_lab/fixtures/loader.py
 src/tk_script_agent_lab/golden_case/__init__.py
@@ -59,4 +62,6 @@ tests/test_deterministic_pipeline.py
 tests/test_fake_providers.py
 tests/test_output_fixtures.py
 tests/test_output_models.py
+tests/test_phase1_e2e.py
+tests/test_phase1_export.py
 tests/test_provider_protocols.py
